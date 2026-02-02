@@ -1,0 +1,35 @@
+# Build
+.build/
+*.o
+*.d
+*.swiftdeps
+*.swiftdeps~
+DoDo.dmg
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+DerivedData/
+
+# Claude Code
+.claude/
+
+# App runtime logs
+DoDo-diag.log
+
+# Personal configs (not for public repo)
+UserConfigs/
+
+# SPM
+Package.resolved
+.swiftpm/
