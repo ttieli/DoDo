@@ -120,3 +120,31 @@ final class QuickCommand {
         }
     }
 }
+
+/// QuickCommand 配置文件格式
+struct QuickCommandConfig: Codable {
+    var name: String
+    var type: String           // "quickcommand"
+    var command: String
+    var runOnLaunch: Bool?
+    var repeatInterval: Int?
+
+    func toQuickCommand() -> QuickCommand {
+        QuickCommand(
+            name: name,
+            command: command,
+            runOnLaunch: runOnLaunch ?? false,
+            repeatInterval: repeatInterval
+        )
+    }
+
+    static func from(_ qc: QuickCommand) -> QuickCommandConfig {
+        QuickCommandConfig(
+            name: qc.name,
+            type: "quickcommand",
+            command: qc.command,
+            runOnLaunch: qc.runOnLaunch ? true : nil,
+            repeatInterval: qc.repeatInterval
+        )
+    }
+}

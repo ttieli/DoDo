@@ -96,6 +96,7 @@ struct PipelineConfig: Codable {
     var label: String
     var type: String  // "pipeline"
     var steps: [String]
+    var stepOptions: [String: [String]]?
     var cleanupIntermediates: Bool?
 
     func toPipeline() -> Pipeline {
@@ -103,16 +104,19 @@ struct PipelineConfig: Codable {
             name: name,
             label: label,
             steps: steps,
+            stepOptions: stepOptions ?? [:],
             cleanupIntermediates: cleanupIntermediates ?? true
         )
     }
 
     static func from(_ pipeline: Pipeline) -> PipelineConfig {
-        PipelineConfig(
+        let opts = pipeline.stepOptions.isEmpty ? nil : pipeline.stepOptions
+        return PipelineConfig(
             name: pipeline.name,
             label: pipeline.label,
             type: "pipeline",
             steps: pipeline.steps,
+            stepOptions: opts,
             cleanupIntermediates: pipeline.cleanupIntermediates
         )
     }

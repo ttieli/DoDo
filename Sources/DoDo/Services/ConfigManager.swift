@@ -41,24 +41,72 @@ class ConfigManager {
         return try decoder.decode(ActionConfig.self, from: data)
     }
 
-    /// 加载所有用户配置
+    /// 加载所有用户命令配置（跳过 pipeline/quickcommand 类型）
     func loadAllConfigs() -> [ActionConfig] {
         ensureConfigDirectoryExists()
-        let fileManager = FileManager.default
         var configs: [ActionConfig] = []
 
-        guard let files = try? fileManager.contentsOfDirectory(at: configDirectory, includingPropertiesForKeys: nil) else {
-            return configs
-        }
-
-        for file in files where file.pathExtension == "json" {
-            if let data = try? Data(contentsOf: file),
-               let config = try? JSONDecoder().decode(ActionConfig.self, from: data) {
+        for (data, _) in jsonFilesInConfigDirectory() {
+            let type = configType(data)
+            if type != nil { continue }  // 有 type 字段的是 pipeline/quickcommand，跳过
+            if let config = try? JSONDecoder().decode(ActionConfig.self, from: data) {
                 configs.append(config)
             }
         }
 
         return configs
+    }
+
+    /// 加载所有用户 Pipeline 配置
+    func loadAllPipelineConfigs() -> [PipelineConfig] {
+        ensureConfigDirectoryExists()
+        var configs: [PipelineConfig] = []
+
+        for (data, _) in jsonFilesInConfigDirectory() {
+            guard configType(data) == "pipeline" else { continue }
+            if let config = try? JSONDecoder().decode(PipelineConfig.self, from: data) {
+                configs.append(config)
+            }
+        }
+
+        return configs
+    }
+
+    /// 加载所有用户快捷命令配置
+    func loadAllQuickCommandConfigs() -> [QuickCommandConfig] {
+        ensureConfigDirectoryExists()
+        var configs: [QuickCommandConfig] = []
+
+        for (data, _) in jsonFilesInConfigDirectory() {
+            guard configType(data) == "quickcommand" else { continue }
+            if let config = try? JSONDecoder().decode(QuickCommandConfig.self, from: data) {
+                configs.append(config)
+            }
+        }
+
+        return configs
+    }
+
+    /// 读取配置目录中所有 JSON 文件的数据
+    private func jsonFilesInConfigDirectory() -> [(Data, URL)] {
+        let fileManager = FileManager.default
+        guard let files = try? fileManager.contentsOfDirectory(at: configDirectory, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return (data, url)
+            }
+    }
+
+    /// 获取 JSON 配置的 type 字段（nil 表示 Action 类型）
+    private func configType(_ data: Data) -> String? {
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return dict["type"] as? String
     }
 
     /// 删除配置文件
@@ -110,9 +158,12 @@ struct ActionConfig: Codable {
     var name: String
     var label: String
     var command: String
+    var commandMode: String?                         // "standard" | "pipe"，默认 standard
     var input: InputConfigData
     var output: OutputConfigData?
     var options: [OptionData]?
+    var supportedInputFormats: [String]?              // ["url", "md", "pdf", ...]
+    var supportedOutputFormats: [OutputFormatData]?   // 输出格式及对应选项
 
     struct InputConfigData: Codable {
         var type: String
@@ -134,6 +185,11 @@ struct ActionConfig: Codable {
         var choices: [String]?
         var `default`: String?
         var placeholder: String?
+    }
+
+    struct OutputFormatData: Codable {
+        var format: String
+        var options: [String]?
     }
 
     /// 转换为 Action 模型
@@ -183,13 +239,30 @@ struct ActionConfig: Codable {
             }
         }
 
+        // 转换 supportedInputFormats
+        let inputFormats: [FileFormat] = (supportedInputFormats ?? []).compactMap {
+            FileFormat(rawValue: $0)
+        }
+
+        // 转换 supportedOutputFormats
+        let outputFormats: [OutputFormatConfig] = (supportedOutputFormats ?? []).compactMap { data in
+            guard let fmt = FileFormat(rawValue: data.format) else { return nil }
+            return OutputFormatConfig(fmt, options: data.options ?? [])
+        }
+
+        // 转换 commandMode
+        let mode = CommandMode(rawValue: commandMode ?? "standard") ?? .standard
+
         return Action(
             name: name,
             label: label,
             command: command,
             inputConfig: inputConfig,
             outputConfig: outputConfig,
-            options: actionOptions
+            options: actionOptions,
+            supportedInputFormats: inputFormats,
+            supportedOutputFormats: outputFormats,
+            commandMode: mode
         )
     }
 
@@ -225,13 +298,34 @@ struct ActionConfig: Codable {
             }
         }
 
+        // 导出 supportedInputFormats
+        let inputFmts: [String]? = action.supportedInputFormats.isEmpty
+            ? nil
+            : action.supportedInputFormats.map { $0.rawValue }
+
+        // 导出 supportedOutputFormats
+        let outputFmts: [OutputFormatData]? = action.supportedOutputFormats.isEmpty
+            ? nil
+            : action.supportedOutputFormats.map { cfg in
+                OutputFormatData(
+                    format: cfg.format.rawValue,
+                    options: cfg.requiredOptions.isEmpty ? nil : cfg.requiredOptions
+                )
+            }
+
+        // 导出 commandMode（standard 时省略）
+        let modeStr: String? = action.commandMode == .standard ? nil : action.commandMode.rawValue
+
         return ActionConfig(
             name: action.name,
             label: action.label,
             command: action.command,
+            commandMode: modeStr,
             input: inputData,
             output: outputData,
-            options: optionsData
+            options: optionsData,
+            supportedInputFormats: inputFmts,
+            supportedOutputFormats: outputFmts
         )
     }
 }

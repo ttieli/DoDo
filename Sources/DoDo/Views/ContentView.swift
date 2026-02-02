@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Action.name) private var actions: [Action]
     @Query(sort: \Pipeline.name) private var pipelines: [Pipeline]
+    @Query(sort: \QuickCommand.name) private var quickCommands: [QuickCommand]
     @State private var selection: SidebarSelection?
     @State private var importingCommand: String?
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
@@ -64,8 +65,7 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onAppear {
-            loadBuiltInConfigs()
-            loadUserConfigs()
+            loadAllOnStartup()
             // 默认选中第一个
             if selection == nil {
                 if let first = pipelines.first {
@@ -77,34 +77,51 @@ struct ContentView: View {
         }
     }
 
-    /// 加载内置配置（首次启动时）
-    private func loadBuiltInConfigs() {
-        // 如果数据库已有数据，跳过
-        guard actions.isEmpty else { return }
+    /// 启动时统一加载所有配置（内置 + iCloud 用户配置）
+    private func loadAllOnStartup() {
+        var changed = false
 
-        // 加载内置的配置
-        let builtInConfigs = BuiltInConfigs.all
-        for action in builtInConfigs {
-            modelContext.insert(action)
+        // 1. 首次启动加载内置命令和组合
+        if actions.isEmpty {
+            for action in BuiltInConfigs.all {
+                modelContext.insert(action)
+            }
+            for pipeline in BuiltInPipelines.all {
+                modelContext.insert(pipeline)
+            }
+            changed = true
         }
 
-        saveContext(modelContext)
-    }
-
-    /// 加载用户配置（从 iCloud）
-    private func loadUserConfigs() {
-        let userConfigs = ConfigManager.shared.loadAllConfigs()
-        let existingNames = Set(actions.map { $0.name })
-
-        for config in userConfigs {
-            // 避免重复导入
-            if !existingNames.contains(config.name) {
-                let action = config.toAction()
-                modelContext.insert(action)
+        // 2. 从 iCloud 加载用户命令配置
+        let existingActionNames = Set(actions.map { $0.name })
+        for config in ConfigManager.shared.loadAllConfigs() {
+            if !existingActionNames.contains(config.name) {
+                modelContext.insert(config.toAction())
+                changed = true
             }
         }
 
-        saveContext(modelContext)
+        // 3. 从 iCloud 加载用户 Pipeline 配置
+        let existingPipelineNames = Set(pipelines.map { $0.name })
+        for config in ConfigManager.shared.loadAllPipelineConfigs() {
+            if !existingPipelineNames.contains(config.name) {
+                modelContext.insert(config.toPipeline())
+                changed = true
+            }
+        }
+
+        // 4. 从 iCloud 加载用户快捷命令配置
+        let existingQCNames = Set(quickCommands.map { $0.name })
+        for config in ConfigManager.shared.loadAllQuickCommandConfigs() {
+            if !existingQCNames.contains(config.name) {
+                modelContext.insert(config.toQuickCommand())
+                changed = true
+            }
+        }
+
+        if changed {
+            saveContext(modelContext)
+        }
     }
 }
 

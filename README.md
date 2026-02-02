@@ -84,6 +84,73 @@ Includes example commands (curl, ffmpeg, convert). You can:
    `~/Library/Mobile Documents/com~apple~CloudDocs/DoDo/configs/`
 3. **Import/Export** — Import and export command configs as JSON within the app
 
+### JSON 配置格式 / JSON Config Format
+
+支持三种配置类型，通过 `type` 字段区分。
+
+Three config types are supported, distinguished by the `type` field.
+
+**命令配置 / Action Config** (无 type 字段 / no `type` field):
+
+```json
+{
+  "name": "curl",
+  "label": "HTTP 请求",
+  "command": "curl",
+  "commandMode": "pipe",
+  "input": { "type": "url", "label": "URL", "allowMultiple": false, "placeholder": "https://..." },
+  "output": { "flag": "-o", "label": "输出文件" },
+  "options": [
+    { "flag": "-s", "type": "bool", "label": "Silent mode" },
+    { "flag": "-H", "type": "string", "label": "Header", "placeholder": "Content-Type: ..." },
+    { "flag": "-vcodec", "type": "enum", "label": "Codec", "choices": ["libx264", "copy"], "default": "libx264" }
+  ],
+  "supportedInputFormats": ["url"],
+  "supportedOutputFormats": [
+    { "format": "json" },
+    { "format": "pdf", "options": ["--pdf"] }
+  ]
+}
+```
+
+| 字段 / Field | 说明 / Description |
+|---|---|
+| `commandMode` | 可选。`"standard"`（默认）或 `"pipe"`（管道模式：`cat input \| cmd > output`）/ Optional. |
+| `input.type` | `"file"` / `"url"` / `"string"` / `"directory"` |
+| `options[].type` | `"bool"` / `"string"` / `"enum"` |
+| `supportedInputFormats` | 可选。支持的输入格式列表 / Optional. Accepted input formats. |
+| `supportedOutputFormats` | 可选。输出格式及对应选项 / Optional. Output formats with required flags. |
+
+**组合命令 / Pipeline Config** (`type: "pipeline"`):
+
+```json
+{
+  "name": "url2image",
+  "label": "网页转图片",
+  "type": "pipeline",
+  "steps": ["wf", "docxjs"],
+  "stepOptions": { "docxjs": ["--image"] },
+  "cleanupIntermediates": true
+}
+```
+
+**快捷命令 / Quick Command Config** (`type: "quickcommand"`):
+
+```json
+{
+  "name": "息屏保活",
+  "type": "quickcommand",
+  "command": "caffeinate -s & pmset displaysleepnow",
+  "runOnLaunch": false,
+  "repeatInterval": null
+}
+```
+
+| 字段 / Field | 说明 / Description |
+|---|---|
+| `runOnLaunch` | 可选。启动时自动执行 / Optional. Run on app launch. |
+| `repeatInterval` | 可选。重复间隔秒数（如 3600=每小时）/ Optional. Repeat interval in seconds. |
+
 ## 项目结构 / Project Structure
 
 ```
