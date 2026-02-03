@@ -20,7 +20,7 @@ struct BatchInputView: View {
     @State private var batchText: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 标签行
             HStack {
                 Text(inputLabel)
@@ -52,25 +52,25 @@ struct BatchInputView: View {
     // MARK: - 单项输入
 
     private var singleInputView: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: Design.spacingMedium) {
             // 使用 TextEditor 保持原有高度
             TextEditor(text: $singleInput)
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 60, maxHeight: 120)
                 .scrollContentBackground(.hidden)
-                .padding(8)
+                .padding(Design.paddingMedium)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(6)
+                .cornerRadius(Design.cornerRadiusMedium)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                 )
                 .overlay(alignment: .topLeading) {
                     if singleInput.isEmpty {
                         Text(placeholder)
                             .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, Design.paddingLarge)
+                            .padding(.vertical, Design.paddingLarge)
                             .allowsHitTesting(false)
                     }
                 }
@@ -89,17 +89,17 @@ struct BatchInputView: View {
             }
             .menuStyle(.borderlessButton)
             .frame(width: 30)
-            .padding(.top, 8)
+            .padding(.top, Design.paddingMedium)
         }
     }
 
     // MARK: - 批量输入列表
 
     private var batchInputListView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 输入列表
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     ForEach(Array(batchInputs.enumerated()), id: \.offset) { index, input in
                         HStack {
                             Text(input)
@@ -117,19 +117,19 @@ struct BatchInputView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(4)
+                        .padding(.horizontal, Design.paddingMedium)
+                        .padding(.vertical, Design.paddingSmall)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(Design.cornerRadiusSmall)
                     }
                 }
-                .padding(8)
+                .padding(Design.paddingMedium)
             }
             .frame(minHeight: 100, maxHeight: 200)
             .background(Color(nsColor: .textBackgroundColor))
-            .cornerRadius(6)
+            .cornerRadius(Design.cornerRadiusMedium)
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                     .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             )
 

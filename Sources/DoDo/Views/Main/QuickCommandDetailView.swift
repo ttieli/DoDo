@@ -9,10 +9,17 @@ struct QuickCommandDetailView: View {
     @Bindable var quickCommand: QuickCommand
     var onDelete: () -> Void
 
+    @Query(sort: \Execution.startedAt, order: .reverse) private var allExecutions: [Execution]
     @StateObject private var commandRunner = CommandRunner()
     @StateObject private var pipelineRunner = PipelineRunner()
     @State private var showingDeleteConfirm = false
     @State private var isEditing = false
+    @State private var expandedExecutionId: UUID?
+
+    /// Executions for this QuickCommand (using quickCommand.id as actionId)
+    private var recentExecutions: [Execution] {
+        allExecutions.filter { $0.actionId == quickCommand.id }.prefix(10).map { $0 }
+    }
 
     private var isRunning: Bool {
         commandRunner.isRunning || pipelineRunner.isRunning
@@ -33,7 +40,7 @@ struct QuickCommandDetailView: View {
 
             // 内容区
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Design.spacingSection) {
                     // 命令显示/编辑
                     commandSection
 
@@ -43,9 +50,17 @@ struct QuickCommandDetailView: View {
                     // 输出区域
                     if isRunning || hasOutput {
                         outputSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+
+                    // 执行历史
+                    if !recentExecutions.isEmpty {
+                        executionHistorySection
                     }
                 }
-                .padding(20)
+                .animation(.easeInOut(duration: 0.2), value: isRunning)
+                .animation(.easeInOut(duration: 0.2), value: hasOutput)
+                .padding(Design.paddingXXL)
             }
         }
         .confirmationDialog("确定删除此快捷命令？", isPresented: $showingDeleteConfirm) {
@@ -54,6 +69,21 @@ struct QuickCommandDetailView: View {
             }
             Button("取消", role: .cancel) {}
         }
+        .focusedSceneValue(\.copyablePageText, pageTextForCopy)
+    }
+
+    /// 页面全部文本（用于 Cmd+Shift+A 复制）
+    private var pageTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(quickCommand.name)]")
+        if quickCommand.type == .command {
+            parts.append("命令: \(quickCommand.command)")
+        } else {
+            parts.append("类型: 组合命令")
+        }
+        if !currentOutput.isEmpty { parts.append("标准输出:\n\(currentOutput)") }
+        if !currentErrorOutput.isEmpty { parts.append("错误输出:\n\(currentErrorOutput)") }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Header
@@ -76,7 +106,7 @@ struct QuickCommandDetailView: View {
 
             Spacer()
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button {
                     isEditing.toggle()
                     if !isEditing {
@@ -96,14 +126,14 @@ struct QuickCommandDetailView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(16)
+        .padding(Design.paddingXL)
         .background(.bar)
     }
 
     // MARK: - Command Section
 
     private var commandSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             // 根据类型显示不同内容
             switch quickCommand.type {
             case .command:
@@ -150,7 +180,7 @@ struct QuickCommandDetailView: View {
 
     // 命令类型的显示
     private var commandTypeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Text("命令")
                 .font(.headline)
 
@@ -158,11 +188,11 @@ struct QuickCommandDetailView: View {
                 TextEditor(text: $quickCommand.command)
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 60)
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: Design.cornerRadius)
                             .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
                     )
             } else {
@@ -170,10 +200,10 @@ struct QuickCommandDetailView: View {
                     Text(quickCommand.command)
                         .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
-                        .padding(12)
+                        .padding(Design.paddingLarge)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(nsColor: .textBackgroundColor))
-                        .cornerRadius(8)
+                        .cornerRadius(Design.cornerRadius)
 
                     Button {
                         NSPasteboard.general.clearContents()
@@ -190,13 +220,13 @@ struct QuickCommandDetailView: View {
 
     // Pipeline 类型的显示
     private var pipelineTypeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("组合命令")
                     .font(.headline)
 
                 if let pipeline = linkedPipeline {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Design.spacingSmall) {
                         Image(systemName: "arrow.triangle.branch")
                             .foregroundStyle(.orange)
                         Text(pipeline.name)
@@ -212,7 +242,7 @@ struct QuickCommandDetailView: View {
 
             if let pipeline = linkedPipeline {
                 // 执行流程
-                HStack(spacing: 4) {
+                HStack(spacing: Design.spacingSmall) {
                     ForEach(Array(pipeline.steps.enumerated()), id: \.offset) { index, stepName in
                         if index > 0 {
                             Image(systemName: "arrow.right")
@@ -223,20 +253,20 @@ struct QuickCommandDetailView: View {
                         Text(action?.label ?? stepName)
                             .font(.caption)
                             .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .padding(.vertical, Design.paddingXS)
                             .background(Color.blue.opacity(0.1))
-                            .cornerRadius(4)
+                            .cornerRadius(Design.cornerRadiusSmall)
                     }
                 }
             }
 
             // 预设参数
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Design.spacingSmall) {
                 Text("预设参数")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Design.spacingTight) {
                     if let input = quickCommand.presetInput {
                         HStack(alignment: .top) {
                             Text("输入:")
@@ -256,10 +286,10 @@ struct QuickCommandDetailView: View {
                         .font(.caption)
                     }
                 }
-                .padding(8)
+                .padding(Design.paddingMedium)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(6)
+                .cornerRadius(Design.cornerRadiusMedium)
             }
         }
     }
@@ -267,11 +297,11 @@ struct QuickCommandDetailView: View {
     // MARK: - Schedule Section
 
     private var scheduleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             Text("自动执行")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Design.spacingXL) {
                 // 启动时执行
                 Toggle(isOn: $quickCommand.runOnLaunch) {
                     HStack {
@@ -340,9 +370,9 @@ struct QuickCommandDetailView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Design.paddingLarge)
             .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Design.cornerRadius)
         }
     }
 
@@ -365,7 +395,7 @@ struct QuickCommandDetailView: View {
     }
 
     private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("输出")
                     .font(.headline)
@@ -373,7 +403,7 @@ struct QuickCommandDetailView: View {
                 Spacer()
 
                 if let code = currentExitCode {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Design.spacingSmall) {
                         Image(systemName: code == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(code == 0 ? .green : .red)
                         Text("退出码: \(code)")
@@ -396,7 +426,7 @@ struct QuickCommandDetailView: View {
 
             // stdout
             if !currentOutput.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("标准输出")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -407,15 +437,15 @@ struct QuickCommandDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 200)
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
                 }
             }
 
             // stderr
             if !currentErrorOutput.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("错误输出")
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -426,9 +456,86 @@ struct QuickCommandDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 150)
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
+                }
+            }
+        }
+    }
+
+    // MARK: - Execution History
+
+    private var executionHistorySection: some View {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
+            Text("执行历史")
+                .font(.headline)
+
+            VStack(spacing: Design.spacingSmall) {
+                ForEach(recentExecutions) { exec in
+                    VStack(alignment: .leading, spacing: Design.spacingSmall) {
+                        HStack {
+                            // Status icon
+                            Image(systemName: exec.status == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(exec.status == .success ? .green : .red)
+                                .font(.caption)
+
+                            // Time
+                            Text(exec.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+
+                            Spacer()
+
+                            // Exit code
+                            if let code = exec.exitCode {
+                                Text("退出码: \(code)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            // Duration
+                            Text(exec.durationText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            // Expand toggle
+                            Image(systemName: expandedExecutionId == exec.id ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                expandedExecutionId = expandedExecutionId == exec.id ? nil : exec.id
+                            }
+                        }
+
+                        // Expanded output
+                        if expandedExecutionId == exec.id {
+                            VStack(alignment: .leading, spacing: Design.spacingSmall) {
+                                if !exec.stdout.isEmpty {
+                                    Text(String(exec.stdout.prefix(500)))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if !exec.stderr.isEmpty {
+                                    Text(String(exec.stderr.prefix(300)))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundStyle(.red)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(Design.paddingMedium)
+                            .background(Color(nsColor: .textBackgroundColor))
+                            .cornerRadius(Design.cornerRadiusSmall)
+                        }
+                    }
+                    .padding(.horizontal, Design.paddingMedium)
+                    .padding(.vertical, Design.paddingSmall)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(Design.cornerRadiusSmall)
                 }
             }
         }
@@ -443,19 +550,42 @@ struct QuickCommandDetailView: View {
         let taskType = quickCommand.type
         let command = quickCommand.command
 
+        // 创建执行记录
+        let execution = Execution(
+            actionId: taskId,
+            actionName: quickCommand.name,
+            command: taskType == .command ? command : "pipeline:\(quickCommand.name)",
+            status: .running
+        )
+        modelContext.insert(execution)
+        saveContext(modelContext)
+
         switch taskType {
         case .command:
             do {
                 _ = try await commandRunner.run(command)
-                // 异步操作后通过 ID 重新获取对象再更新
+                execution.stdout = commandRunner.output
+                execution.stderr = commandRunner.errorOutput
+                execution.exitCode = commandRunner.exitCode
+                execution.status = (commandRunner.exitCode ?? -1) == 0 ? .success : .failed
+                execution.finishedAt = Date()
+                saveContext(modelContext)
                 updateLastRunAt(taskId: taskId)
             } catch {
+                execution.stderr = error.localizedDescription
+                execution.status = .failed
+                execution.finishedAt = Date()
+                saveContext(modelContext)
                 print("执行失败: \(error)")
             }
 
         case .pipeline:
             guard let pipeline = linkedPipeline,
                   let input = quickCommand.presetInput else {
+                execution.stderr = "Pipeline 配置无效"
+                execution.status = .failed
+                execution.finishedAt = Date()
+                saveContext(modelContext)
                 print("Pipeline 配置无效")
                 return
             }
@@ -479,9 +609,17 @@ struct QuickCommandDetailView: View {
                     finalOutput: quickCommand.presetOutput,
                     finalOutputFormat: finalFormat
                 )
-                // 异步操作后通过 ID 重新获取对象再更新
+                execution.stdout = pipelineRunner.output
+                execution.stderr = pipelineRunner.errorOutput
+                execution.status = pipelineRunner.errorOutput.isEmpty ? .success : .failed
+                execution.finishedAt = Date()
+                saveContext(modelContext)
                 updateLastRunAt(taskId: taskId)
             } catch {
+                execution.stderr = error.localizedDescription
+                execution.status = .failed
+                execution.finishedAt = Date()
+                saveContext(modelContext)
                 print("Pipeline 执行失败: \(error)")
             }
         }

@@ -33,6 +33,8 @@ struct ActionDetailView: View {
     @State private var showingDeleteConfirm = false
     @State private var showingSaveAsQuickCommand = false
     @State private var quickCommandName = ""
+    @State private var optionsExpanded = false
+    @State private var outputExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,40 +44,71 @@ struct ActionDetailView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Design.spacingSection) {
                     // 输入区
                     inputSection
 
-                    // 输出目录区
+                    // 输出目录区（有默认值时折叠）
                     if action.outputConfig != nil {
-                        outputSection
+                        DisclosureGroup(isExpanded: $outputExpanded) {
+                            outputSection
+                        } label: {
+                            HStack {
+                                Label(action.outputConfig?.label ?? "输出", systemImage: "folder.badge.plus")
+                                    .font(.headline)
+                                if !outputExpanded, let defaultVal = action.outputConfig?.defaultValue, !defaultVal.isEmpty {
+                                    Text(defaultVal)
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
                     }
 
-                    // 选项区
+                    // 选项区（默认折叠，显示摘要）
                     if !action.options.isEmpty {
-                        optionsSection
+                        DisclosureGroup(isExpanded: $optionsExpanded) {
+                            optionsSection
+                        } label: {
+                            HStack {
+                                Label("选项", systemImage: "slider.horizontal.3")
+                                    .font(.headline)
+                                Text("\(action.options.count) 项")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, Design.paddingMedium)
+                                    .padding(.vertical, Design.paddingXS)
+                                    .background(Color(nsColor: .controlBackgroundColor))
+                                    .cornerRadius(Design.cornerRadiusSmall)
+                            }
+                        }
                     }
 
                     // 命令预览
                     commandPreviewSection
 
-                    // 执行按钮区
-                    executeSection
-
                     // 输出区
                     if batchMode == .multiple && (!batchRunner.execution.items.isEmpty || batchRunner.execution.isRunning) {
-                        // 批量执行结果
                         batchResultSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else if !runner.output.isEmpty || !runner.errorOutput.isEmpty || runner.isRunning {
-                        // 单项执行结果
                         outputResultSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
-
-                    // 配置查看区
-                    configSection
                 }
+                .animation(.easeInOut(duration: 0.2), value: runner.isRunning)
+                .animation(.easeInOut(duration: 0.2), value: batchRunner.execution.isRunning)
                 .padding()
             }
+
+            Divider()
+
+            // 执行按钮固定底部
+            executeSection
+                .padding(.horizontal)
+                .padding(.vertical, Design.paddingMedium)
+                .background(.bar)
         }
         .onAppear {
             resetState()
@@ -83,13 +116,28 @@ struct ActionDetailView: View {
         .onChange(of: action.id) { _, _ in
             resetState()
         }
+        .sheet(isPresented: $showingConfig) {
+            configSheetView
+        }
+        .focusedSceneValue(\.copyablePageText, pageTextForCopy)
+    }
+
+    /// 页面全部文本（用于 Cmd+Shift+A 复制）
+    private var pageTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(action.name)] \(action.label)")
+        if !inputValue.isEmpty { parts.append("输入: \(inputValue)") }
+        if !outputValue.isEmpty { parts.append("输出目录: \(outputValue)") }
+        if !runner.output.isEmpty { parts.append("标准输出:\n\(runner.output)") }
+        if !runner.errorOutput.isEmpty { parts.append("错误输出:\n\(runner.errorOutput)") }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - 标题区
 
     private var headerSection: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Design.spacingSmall) {
                 Text(action.name)
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -98,6 +146,16 @@ struct ActionDetailView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+
+            Button(action: {
+                if configText.isEmpty { loadConfigText() }
+                showingConfig = true
+            }) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("查看配置")
 
             if onDelete != nil {
                 Button(action: { showingDeleteConfirm = true }) {
@@ -126,7 +184,7 @@ struct ActionDetailView: View {
     // MARK: - 输入区
 
     private var inputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 使用 BatchInputView
             BatchInputView(
                 singleInput: $inputValue,
@@ -136,6 +194,17 @@ struct ActionDetailView: View {
                 placeholder: action.inputConfig.placeholder ?? placeholderForInputType,
                 allowedExtensions: allowedExtensionsForInput
             )
+
+            // 输入验证提示
+            if let error = inputValidationError {
+                HStack(spacing: Design.spacingSmall) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                    Text(error)
+                        .font(.caption)
+                }
+                .foregroundStyle(.red)
+            }
         }
     }
 
@@ -148,6 +217,41 @@ struct ActionDetailView: View {
         }
     }
 
+    /// Input validation error message (nil = valid)
+    private var inputValidationError: String? {
+        guard batchMode == .single else {
+            return batchInputs.isEmpty ? "请添加批量输入项" : nil
+        }
+        guard !inputValue.isEmpty else { return nil }  // empty = not yet filled, not "invalid"
+
+        switch action.inputConfig.type {
+        case .url:
+            if URL(string: inputValue) == nil || (!inputValue.hasPrefix("http://") && !inputValue.hasPrefix("https://")) {
+                return "URL 格式无效"
+            }
+        case .file:
+            if !FileManager.default.fileExists(atPath: inputValue) {
+                return "文件不存在"
+            }
+        case .directory:
+            var isDir: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: inputValue, isDirectory: &isDir) || !isDir.boolValue {
+                return "目录不存在"
+            }
+        case .string:
+            break
+        }
+        return nil
+    }
+
+    /// Whether the execute button should be disabled
+    private var isExecuteDisabled: Bool {
+        if batchMode == .multiple {
+            return batchInputs.isEmpty
+        }
+        return (inputValue.isEmpty && inputFiles.isEmpty) || inputValidationError != nil
+    }
+
     private var allowedExtensionsForInput: [String] {
         action.supportedInputFormats.map { $0.rawValue }
     }
@@ -156,11 +260,8 @@ struct ActionDetailView: View {
     // MARK: - 输出区
 
     private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             if let outputConfig = action.outputConfig {
-                Label(outputConfig.label, systemImage: "folder.badge.plus")
-                    .font(.headline)
-
                 // 批量模式：选择输出目录方式
                 if batchMode == .multiple {
                     batchOutputSection
@@ -173,17 +274,17 @@ struct ActionDetailView: View {
     }
 
     private func singleOutputSection(outputConfig: OutputConfig) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: Design.spacingMedium) {
+            VStack(alignment: .leading, spacing: Design.spacingSmall) {
                 TextEditor(text: $outputValue)
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 40, maxHeight: 80)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
 
@@ -201,7 +302,7 @@ struct ActionDetailView: View {
                     showingOutputPicker = true
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, Design.paddingMedium)
         }
         .fileImporter(
             isPresented: $showingOutputPicker,
@@ -215,7 +316,7 @@ struct ActionDetailView: View {
     }
 
     private var batchOutputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 输出目录选择
             HStack {
                 Text("输出目录:")
@@ -258,28 +359,12 @@ struct ActionDetailView: View {
     // MARK: - 选项区
 
     private var optionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("选项", systemImage: "slider.horizontal.3")
-                .font(.headline)
-
-            // 布尔和枚举选项放在 Grid 里
-            let boolAndEnumOptions = action.options.filter { $0.type == .bool || $0.type == .enum }
-            if !boolAndEnumOptions.isEmpty {
-                LazyVGrid(columns: [
-                    GridItem(.adaptive(minimum: 200), spacing: 12)
-                ], spacing: 12) {
-                    ForEach(boolAndEnumOptions) { option in
-                        optionView(for: option)
-                    }
-                }
-            }
-
-            // 字符串选项单独占满宽度
-            let stringOptions = action.options.filter { $0.type == .string }
-            ForEach(stringOptions) { option in
+        Form {
+            ForEach(action.options) { option in
                 optionView(for: option)
             }
         }
+        .formStyle(.grouped)
     }
 
     @ViewBuilder
@@ -299,58 +384,29 @@ struct ActionDetailView: View {
             .toggleStyle(.checkbox)
 
         case .enum:
-            HStack {
-                Text(option.label)
-                    .frame(width: 80, alignment: .leading)
-                Picker("", selection: Binding(
-                    get: { optionValues[option.flag] ?? option.defaultValue ?? "" },
-                    set: { optionValues[option.flag] = $0 }
-                )) {
-                    Text("默认").tag("")
-                    ForEach(option.choices ?? [], id: \.self) { choice in
-                        Text(choice).tag(choice)
-                    }
+            Picker(option.label, selection: Binding(
+                get: { optionValues[option.flag] ?? option.defaultValue ?? "" },
+                set: { optionValues[option.flag] = $0 }
+            )) {
+                Text("默认").tag("")
+                ForEach(option.choices ?? [], id: \.self) { choice in
+                    Text(choice).tag(choice)
                 }
-                .labelsHidden()
             }
 
         case .string:
-            VStack(alignment: .leading, spacing: 4) {
-                Text(option.label)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                TextEditor(text: Binding(
-                    get: { optionValues[option.flag] ?? option.defaultValue ?? "" },
-                    set: { optionValues[option.flag] = $0 }
-                ))
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 60, maxHeight: 150)
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    if (optionValues[option.flag] ?? "").isEmpty {
-                        Text(option.placeholder ?? "")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
+            TextField(option.label, text: Binding(
+                get: { optionValues[option.flag] ?? option.defaultValue ?? "" },
+                set: { optionValues[option.flag] = $0 }
+            ), prompt: Text(option.placeholder ?? ""))
+            .font(.system(.body, design: .monospaced))
         }
     }
 
     // MARK: - 命令预览
 
     private var commandPreviewSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             HStack {
                 Label("命令预览", systemImage: "terminal")
                     .font(.headline)
@@ -373,12 +429,12 @@ struct ActionDetailView: View {
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(12)
+                .padding(Design.paddingLarge)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(8)
+                .cornerRadius(Design.cornerRadius)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Design.cornerRadius)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                 )
                 .textSelection(.enabled)
@@ -408,7 +464,7 @@ struct ActionDetailView: View {
                     )
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(inputValue.isEmpty && inputFiles.isEmpty)
+                .disabled(isExecuteDisabled)
             }
 
             // 保存为定时任务（仅单项模式）
@@ -420,7 +476,7 @@ struct ActionDetailView: View {
                     Label("保存为定时任务", systemImage: "clock.badge.plus")
                 }
                 .buttonStyle(.bordered)
-                .disabled(inputValue.isEmpty && inputFiles.isEmpty)
+                .disabled(isExecuteDisabled)
             }
 
             Spacer()
@@ -451,7 +507,7 @@ struct ActionDetailView: View {
     // MARK: - 批量结果区
 
     private var batchResultSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             BatchCommandResultView(execution: batchRunner.execution) { item in
                 // 选中项时可以展开查看详情
             }
@@ -460,7 +516,7 @@ struct ActionDetailView: View {
             if let selectedItem = batchRunner.execution.selectedItem,
                let result = selectedItem.result,
                !result.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("详细输出")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -470,13 +526,13 @@ struct ActionDetailView: View {
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
+                            .padding(Design.paddingMedium)
                     }
                     .frame(maxHeight: 150)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
                 }
@@ -487,7 +543,7 @@ struct ActionDetailView: View {
     // MARK: - 输出结果区
 
     private var outputResultSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             HStack {
                 Label("输出", systemImage: "text.alignleft")
                     .font(.headline)
@@ -495,22 +551,22 @@ struct ActionDetailView: View {
                 Spacer()
 
                 if let exitCode = runner.exitCode {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Design.spacingSmall) {
                         Image(systemName: exitCode == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
                         Text(exitCode == 0 ? "成功" : "失败 (exit \(exitCode))")
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(exitCode == 0 ? .green : .red)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Design.paddingMedium)
+                    .padding(.vertical, Design.paddingSmall)
                     .background(
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: Design.cornerRadiusSmall)
                             .fill(exitCode == 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
                     )
                 }
 
                 if runner.isRunning {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Design.spacingSmall) {
                         ProgressView()
                             .scaleEffect(0.6)
                         Text("执行中...")
@@ -536,7 +592,7 @@ struct ActionDetailView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Design.spacingMedium) {
                         if !runner.output.isEmpty {
                             Text(runner.output)
                                 .font(.system(.body, design: .monospaced))
@@ -556,13 +612,13 @@ struct ActionDetailView: View {
                             .frame(height: 1)
                             .id("bottom")
                     }
-                    .padding(12)
+                    .padding(Design.paddingLarge)
                 }
                 .frame(minHeight: 150, maxHeight: 400)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(8)
+                .cornerRadius(Design.cornerRadius)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Design.cornerRadius)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                 )
                 .onChange(of: runner.output) { _, _ in
@@ -574,75 +630,59 @@ struct ActionDetailView: View {
         }
     }
 
-    // MARK: - 配置区
+    // MARK: - 配置 Sheet
 
-    private var configSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: {
-                withAnimation {
-                    showingConfig.toggle()
-                    if showingConfig && configText.isEmpty {
-                        loadConfigText()
-                    }
-                }
-            }) {
-                HStack {
-                    Image(systemName: showingConfig ? "chevron.down" : "chevron.right")
-                        .frame(width: 12)
-                    Label("查看配置", systemImage: "doc.text")
-                        .font(.headline)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
+    private var configSheetView: some View {
+        VStack(spacing: Design.spacingXL) {
+            HStack {
+                Text("配置 - \(action.name)")
+                    .font(.headline)
+                Spacer()
+                Button("关闭") { showingConfig = false }
+                    .keyboardShortcut(.cancelAction)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
-            if showingConfig {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextEditor(text: $configText)
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(minHeight: 200, maxHeight: 300)
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .cornerRadius(6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                        )
+            TextEditor(text: $configText)
+                .font(.system(.caption, design: .monospaced))
+                .frame(minHeight: 300, maxHeight: 500)
+                .scrollContentBackground(.hidden)
+                .padding(Design.paddingMedium)
+                .background(Color(nsColor: .textBackgroundColor))
+                .cornerRadius(Design.cornerRadiusMedium)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
 
-                    if let error = configError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
+            if let error = configError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
-                    HStack {
-                        Button("复制") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(configText, forType: .string)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("重置") {
-                            loadConfigText()
-                            configError = nil
-                        }
-                        .buttonStyle(.bordered)
-
-                        Spacer()
-
-                        Button("保存修改") {
-                            saveConfig()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
+            HStack {
+                Button("复制") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(configText, forType: .string)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .buttonStyle(.bordered)
+
+                Button("重置") {
+                    loadConfigText()
+                    configError = nil
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("保存修改") {
+                    saveConfig()
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
-        .padding(.top, 8)
+        .padding(Design.paddingSection)
+        .frame(minWidth: 500, minHeight: 400)
     }
 
     private func loadConfigText() {
@@ -736,6 +776,11 @@ struct ActionDetailView: View {
         batchOutputDirectory = ""
         useSameDirectory = true
         batchRunner.reset()
+
+        // 输出区：有默认值时折叠
+        outputExpanded = (action.outputConfig?.defaultValue ?? "").isEmpty
+        // 选项区：默认折叠
+        optionsExpanded = false
 
         // 设置默认值
         for option in action.options {

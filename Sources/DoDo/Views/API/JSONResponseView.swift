@@ -27,11 +27,11 @@ struct JSONResponseView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
+            .padding(Design.paddingLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
     }
 }
 
@@ -59,7 +59,7 @@ struct JSONNodeView: View {
     // MARK: - Object View
 
     private func objectView(_ dict: [String: Any]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Design.spacingTight) {
             if dict.isEmpty {
                 Text("{}")
                     .font(.system(.body, design: .monospaced))
@@ -67,7 +67,7 @@ struct JSONNodeView: View {
             } else {
                 let isExpanded = expandedPaths.contains(path) || indentLevel == 0
 
-                HStack(spacing: 4) {
+                HStack(spacing: Design.spacingSmall) {
                     Button {
                         toggleExpanded()
                     } label: {
@@ -124,7 +124,7 @@ struct JSONNodeView: View {
     // MARK: - Array View
 
     private func arrayView(_ array: [Any]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Design.spacingTight) {
             if array.isEmpty {
                 Text("[]")
                     .font(.system(.body, design: .monospaced))
@@ -132,7 +132,7 @@ struct JSONNodeView: View {
             } else {
                 let isExpanded = expandedPaths.contains(path)
 
-                HStack(spacing: 4) {
+                HStack(spacing: Design.spacingSmall) {
                     Button {
                         toggleExpanded()
                     } label: {

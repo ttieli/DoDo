@@ -17,6 +17,7 @@ struct SidebarView: View {
     @Query(sort: \QuickCommand.name) private var quickCommands: [QuickCommand]
     @Query(sort: \APIEndpoint.name) private var apiEndpoints: [APIEndpoint]
     @Query(sort: \APIPipeline.name) private var apiPipelines: [APIPipeline]
+    @Query(sort: \Execution.startedAt, order: .reverse) private var executions: [Execution]
     @Binding var selection: SidebarSelection?
     @Binding var importingCommand: String?
     @State private var showingImportSheet = false
@@ -26,13 +27,124 @@ struct SidebarView: View {
     @State private var showingAPIEndpointInput = false
     @State private var showingAPIPipelineInput = false
     @State private var newCommandName = ""
+    @State private var searchText = ""
+
+    // MARK: - Filtered Data
+
+    private var filteredActions: [Action] {
+        guard !searchText.isEmpty else { return actions.map { $0 } }
+        let query = searchText.lowercased()
+        return actions.filter { $0.name.lowercased().contains(query) || $0.label.lowercased().contains(query) }
+    }
+
+    private var filteredPipelines: [Pipeline] {
+        guard !searchText.isEmpty else { return pipelines.map { $0 } }
+        let query = searchText.lowercased()
+        return pipelines.filter { $0.name.lowercased().contains(query) || $0.label.lowercased().contains(query) }
+    }
+
+    private var filteredQuickCommands: [QuickCommand] {
+        guard !searchText.isEmpty else { return quickCommands.map { $0 } }
+        let query = searchText.lowercased()
+        return quickCommands.filter { $0.name.lowercased().contains(query) || $0.command.lowercased().contains(query) }
+    }
+
+    private var filteredAPIEndpoints: [APIEndpoint] {
+        guard !searchText.isEmpty else { return apiEndpoints.map { $0 } }
+        let query = searchText.lowercased()
+        return apiEndpoints.filter { $0.name.lowercased().contains(query) || $0.url.lowercased().contains(query) }
+    }
+
+    private var filteredAPIPipelines: [APIPipeline] {
+        guard !searchText.isEmpty else { return apiPipelines.map { $0 } }
+        let query = searchText.lowercased()
+        return apiPipelines.filter { $0.name.lowercased().contains(query) }
+    }
+
+    private var hasNoResults: Bool {
+        !searchText.isEmpty &&
+        filteredActions.isEmpty && filteredPipelines.isEmpty &&
+        filteredQuickCommands.isEmpty && filteredAPIEndpoints.isEmpty &&
+        filteredAPIPipelines.isEmpty
+    }
+
+    // MARK: - Recent Usage
+
+    private var recentItems: [(selection: SidebarSelection, name: String, detail: String, icon: String, iconColor: Color, date: Date)] {
+        var items: [(selection: SidebarSelection, name: String, detail: String, icon: String, iconColor: Color, date: Date)] = []
+
+        // From Execution records → Actions
+        var seenActionIds = Set<UUID>()
+        for execution in executions {
+            guard !seenActionIds.contains(execution.actionId) else { continue }
+            seenActionIds.insert(execution.actionId)
+            if let action = actions.first(where: { $0.id == execution.actionId }) {
+                items.append((
+                    selection: .action(action),
+                    name: action.name,
+                    detail: action.label,
+                    icon: "terminal",
+                    iconColor: .secondary,
+                    date: execution.startedAt
+                ))
+            }
+            if items.count >= 5 { break }
+        }
+
+        // From QuickCommand.lastRunAt
+        for qc in quickCommands {
+            if let lastRun = qc.lastRunAt {
+                items.append((
+                    selection: .quickCommand(qc),
+                    name: qc.name,
+                    detail: qc.type == .command ? qc.command : "组合命令",
+                    icon: "bolt.fill",
+                    iconColor: .purple,
+                    date: lastRun
+                ))
+            }
+        }
+
+        // Sort by date descending, take top 3
+        return items.sorted { $0.date > $1.date }.prefix(3).map { $0 }
+    }
 
     var body: some View {
         List(selection: $selection) {
+            // 无结果提示
+            if hasNoResults {
+                Text("无匹配项")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Design.paddingXL)
+            }
+
+            // 最近使用
+            if searchText.isEmpty && !recentItems.isEmpty {
+                Section("最近使用") {
+                    ForEach(recentItems, id: \.selection) { item in
+                        HStack {
+                            Image(systemName: item.icon)
+                                .foregroundStyle(item.iconColor)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: Design.spacingTight) {
+                                Text(item.name)
+                                    .font(.body)
+                                Text(item.date, style: .relative)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.vertical, Design.paddingXS)
+                        .tag(item.selection)
+                    }
+                }
+            }
+
             // 组合命令
-            if !pipelines.isEmpty {
+            if !filteredPipelines.isEmpty {
                 Section("组合命令") {
-                    ForEach(pipelines) { pipeline in
+                    ForEach(filteredPipelines) { pipeline in
                         PipelineRowView(pipeline: pipeline)
                             .tag(SidebarSelection.pipeline(pipeline))
                             .contextMenu {
@@ -45,23 +157,30 @@ struct SidebarView: View {
             }
 
             // 单个命令
-            Section("我的命令") {
-                ForEach(actions) { action in
-                    ActionRowView(action: action)
-                        .tag(SidebarSelection.action(action))
-                        .contextMenu {
-                            Button("删除", role: .destructive) {
-                                deleteAction(action)
+            if !filteredActions.isEmpty || (searchText.isEmpty && actions.isEmpty) {
+                Section("我的命令") {
+                    if actions.isEmpty && searchText.isEmpty {
+                        Text("点击 + 添加命令")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.vertical, Design.paddingXS)
+                    }
+                    ForEach(filteredActions) { action in
+                        ActionRowView(action: action)
+                            .tag(SidebarSelection.action(action))
+                            .contextMenu {
+                                Button("删除", role: .destructive) {
+                                    deleteAction(action)
+                                }
                             }
-                        }
+                    }
                 }
-                .onDelete(perform: deleteActions)
             }
 
             // 快捷命令
-            if !quickCommands.isEmpty {
+            if !filteredQuickCommands.isEmpty {
                 Section("快捷命令") {
-                    ForEach(quickCommands) { quickCommand in
+                    ForEach(filteredQuickCommands) { quickCommand in
                         QuickCommandRowView(quickCommand: quickCommand)
                             .tag(SidebarSelection.quickCommand(quickCommand))
                             .contextMenu {
@@ -74,9 +193,9 @@ struct SidebarView: View {
             }
 
             // API 端点
-            if !apiEndpoints.isEmpty {
+            if !filteredAPIEndpoints.isEmpty {
                 Section("API") {
-                    ForEach(apiEndpoints) { endpoint in
+                    ForEach(filteredAPIEndpoints) { endpoint in
                         APIEndpointRowView(endpoint: endpoint)
                             .tag(SidebarSelection.apiEndpoint(endpoint))
                             .contextMenu {
@@ -93,9 +212,9 @@ struct SidebarView: View {
             }
 
             // API 组合
-            if !apiPipelines.isEmpty {
+            if !filteredAPIPipelines.isEmpty {
                 Section("API 组合") {
-                    ForEach(apiPipelines) { pipeline in
+                    ForEach(filteredAPIPipelines) { pipeline in
                         APIPipelineRowView(pipeline: pipeline)
                             .tag(SidebarSelection.apiPipeline(pipeline))
                             .contextMenu {
@@ -112,6 +231,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .searchable(text: $searchText, placement: .sidebar, prompt: "搜索命令...")
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
                 Divider()
@@ -159,8 +279,8 @@ struct SidebarView: View {
 
                     Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Design.paddingLarge)
+                .padding(.vertical, Design.paddingMedium)
             }
             .background(.bar)
         }
@@ -311,17 +431,6 @@ struct SidebarView: View {
         }
     }
 
-    private func deleteActions(at offsets: IndexSet) {
-        for index in offsets {
-            let action = actions[index]
-            if case .action(let selected) = selection, selected == action {
-                selection = nil
-            }
-            modelContext.delete(action)
-        }
-        saveContext(modelContext)
-    }
-
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -377,7 +486,7 @@ struct ActionRowView: View {
             Image(systemName: iconForAction(action))
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
                 Text(action.name)
                     .font(.body)
                 Text(action.label)
@@ -385,7 +494,7 @@ struct ActionRowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.paddingXS)
     }
 
     private func iconForAction(_ action: Action) -> String {
@@ -407,7 +516,7 @@ struct PipelineRowView: View {
             Image(systemName: "arrow.triangle.branch")
                 .foregroundStyle(.orange)
                 .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
                 Text(pipeline.name)
                     .font(.body)
                 Text(pipeline.label)
@@ -415,7 +524,7 @@ struct PipelineRowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.paddingXS)
     }
 }
 
@@ -429,7 +538,7 @@ struct CommandInputSheet: View {
     @State private var isChecking = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("导入新命令")
                 .font(.headline)
 
@@ -450,7 +559,7 @@ struct CommandInputSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -463,7 +572,7 @@ struct CommandInputSheet: View {
                 .disabled(commandName.isEmpty || isChecking)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
         .frame(width: 320)
     }
 
@@ -509,7 +618,7 @@ struct PipelineInputSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("创建组合命令")
                 .font(.headline)
 
@@ -523,21 +632,21 @@ struct PipelineInputSheet: View {
                             if let index = pipelineSteps.firstIndex(where: { $0.actionName == action.name }) {
                                 Text("\(index + 1)")
                                     .font(.caption)
-                                    .padding(4)
+                                    .padding(Design.paddingSmall)
                                     .background(Color.blue)
                                     .foregroundStyle(.white)
                                     .clipShape(Circle())
                             }
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: Design.spacingTight) {
+                                HStack(spacing: Design.spacingSmall) {
                                     Text(action.name)
                                     Text(action.label)
                                         .foregroundStyle(.secondary)
                                 }
                                 // 显示格式信息
                                 if !action.supportedInputFormats.isEmpty || !action.supportedOutputFormats.isEmpty {
-                                    HStack(spacing: 4) {
+                                    HStack(spacing: Design.spacingSmall) {
                                         if !action.supportedInputFormats.isEmpty {
                                             Text("入:")
                                                 .foregroundStyle(.secondary)
@@ -595,7 +704,7 @@ struct PipelineInputSheet: View {
             }
             .frame(width: 450, height: 350)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -615,7 +724,7 @@ struct PipelineInputSheet: View {
                 .disabled(name.isEmpty || label.isEmpty || pipelineSteps.count < 2)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
         .sheet(isPresented: $showingFormatPicker) {
             FormatPickerSheet(
                 action: pendingAction!,
@@ -696,7 +805,7 @@ struct FormatPickerSheet: View {
     var onSelect: (OutputFormatConfig) -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("选择输出格式")
                 .font(.headline)
 
@@ -704,7 +813,7 @@ struct FormatPickerSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            VStack(spacing: 8) {
+            VStack(spacing: Design.spacingMedium) {
                 ForEach(formats, id: \.format) { format in
                     Button {
                         dismiss()
@@ -719,10 +828,10 @@ struct FormatPickerSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Design.paddingLarge)
+                        .padding(.vertical, Design.paddingMedium)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(Design.cornerRadius)
                     }
                     .buttonStyle(.plain)
                 }
@@ -734,7 +843,7 @@ struct FormatPickerSheet: View {
             }
             .keyboardShortcut(.cancelAction)
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 }
 
@@ -756,8 +865,8 @@ struct QuickCommandRowView: View {
             }
             .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
+                HStack(spacing: Design.spacingSmall) {
                     Text(quickCommand.name)
                         .font(.body)
 
@@ -782,7 +891,7 @@ struct QuickCommandRowView: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.paddingXS)
     }
 }
 
@@ -795,7 +904,7 @@ struct QuickCommandInputSheet: View {
     @State private var command = ""
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("添加快捷命令")
                 .font(.headline)
 
@@ -813,7 +922,7 @@ struct QuickCommandInputSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -828,7 +937,7 @@ struct QuickCommandInputSheet: View {
                 .disabled(name.isEmpty || command.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 }
 
@@ -842,7 +951,7 @@ struct APIEndpointRowView: View {
                 .foregroundStyle(.blue)
                 .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
                 Text(endpoint.name.isEmpty ? "未命名" : endpoint.name)
                     .font(.body)
 
@@ -852,7 +961,7 @@ struct APIEndpointRowView: View {
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.paddingXS)
     }
 }
 
@@ -866,7 +975,7 @@ struct APIPipelineRowView: View {
                 .foregroundStyle(.cyan)
                 .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
                 Text(pipeline.name.isEmpty ? "未命名" : pipeline.name)
                     .font(.body)
 
@@ -875,7 +984,7 @@ struct APIPipelineRowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.paddingXS)
     }
 }
 
@@ -889,7 +998,7 @@ struct APIEndpointInputSheet: View {
     @State private var method: HTTPMethod = .GET
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("添加 API")
                 .font(.headline)
 
@@ -912,7 +1021,7 @@ struct APIEndpointInputSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -927,7 +1036,7 @@ struct APIEndpointInputSheet: View {
                 .disabled(name.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 }
 
@@ -941,7 +1050,7 @@ struct APIPipelineInputSheet: View {
     @State private var description = ""
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.spacingXL) {
             Text("创建 API 组合")
                 .font(.headline)
 
@@ -964,7 +1073,7 @@ struct APIPipelineInputSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -982,7 +1091,7 @@ struct APIPipelineInputSheet: View {
                 .disabled(name.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 }
 

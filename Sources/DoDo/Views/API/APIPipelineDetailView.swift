@@ -28,7 +28,7 @@ struct APIPipelineDetailView: View {
 
             // 内容区
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Design.spacingSection) {
                     // 描述
                     if isEditing || (pipeline.descriptionText != nil && !pipeline.descriptionText!.isEmpty) {
                         descriptionSection
@@ -43,9 +43,11 @@ struct APIPipelineDetailView: View {
                     // 响应区域
                     if runner.response != nil || runner.error != nil {
                         responseSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
-                .padding(20)
+                .animation(.easeInOut(duration: 0.2), value: runner.isRunning)
+                .padding(Design.paddingXXL)
             }
         }
         .confirmationDialog("确定删除此 API 组合？", isPresented: $showingDeleteConfirm) {
@@ -54,6 +56,26 @@ struct APIPipelineDetailView: View {
             }
             Button("取消", role: .cancel) {}
         }
+        .focusedSceneValue(\.copyablePageText, pageTextForCopy)
+    }
+
+    /// 页面全部文本（用于 Cmd+Shift+A 复制）
+    private var pageTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(pipeline.name)]")
+        if let desc = pipeline.descriptionText, !desc.isEmpty { parts.append(desc) }
+        if let error = runner.error { parts.append("错误: \(error)") }
+        if let response = runner.response {
+            parts.append("状态: \(response.statusCode)")
+            if let json = response.json,
+               let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                parts.append("响应:\n\(str)")
+            } else if let str = String(data: response.data, encoding: .utf8) {
+                parts.append("响应:\n\(str)")
+            }
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Header
@@ -76,7 +98,7 @@ struct APIPipelineDetailView: View {
 
             Spacer()
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button {
                     isEditing.toggle()
                     if !isEditing {
@@ -96,14 +118,14 @@ struct APIPipelineDetailView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(16)
+        .padding(Design.paddingXL)
         .background(.bar)
     }
 
     // MARK: - Description
 
     private var descriptionSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Text("描述")
                 .font(.headline)
 
@@ -123,7 +145,7 @@ struct APIPipelineDetailView: View {
     // MARK: - Steps
 
     private var stepsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("步骤")
                     .font(.headline)
@@ -154,9 +176,9 @@ struct APIPipelineDetailView: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: Design.spacingLarge) {
                     ForEach(Array(pipeline.steps.enumerated()), id: \.element.id) { index, step in
                         StepCard(
                             step: step,
@@ -189,12 +211,12 @@ struct APIPipelineDetailView: View {
     // MARK: - Execute
 
     private var executeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             Text("执行")
                 .font(.headline)
 
             // 输入变量
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                 Text("初始变量（JSON 格式，如 {\"input\": \"腾讯\"}）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -241,7 +263,7 @@ struct APIPipelineDetailView: View {
     // MARK: - Response
 
     private var responseSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("响应")
                     .font(.headline)
@@ -249,10 +271,10 @@ struct APIPipelineDetailView: View {
                 if let response = runner.response {
                     Text("状态: \(response.statusCode)")
                         .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, Design.paddingMedium)
+                        .padding(.vertical, Design.paddingXS)
                         .background(response.statusCode < 400 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                        .cornerRadius(4)
+                        .cornerRadius(Design.cornerRadiusSmall)
                 }
 
                 Spacer()
@@ -270,14 +292,14 @@ struct APIPipelineDetailView: View {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(12)
+                    .padding(Design.paddingLarge)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
             } else if let response = runner.response {
                 // 提取的变量
                 if !response.extractedVariables.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Design.spacingSmall) {
                         Text("提取的变量")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -295,9 +317,9 @@ struct APIPipelineDetailView: View {
                             }
                         }
                     }
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                 }
 
                 // 响应内容
@@ -358,7 +380,7 @@ struct StepCard: View {
     @State private var showMappings = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             HStack {
                 // 步骤序号
                 Text("\(index + 1)")
@@ -367,7 +389,7 @@ struct StepCard: View {
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
                     .background(isRunning ? Color.orange : Color.blue)
-                    .cornerRadius(12)
+                    .cornerRadius(Design.cornerRadiusLarge)
 
                 if isRunning {
                     ProgressView()
@@ -376,7 +398,7 @@ struct StepCard: View {
 
                 // API 名称
                 if let endpoint = endpoint {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Design.spacingTight) {
                         Text(endpoint.name.isEmpty ? "未命名" : endpoint.name)
                             .fontWeight(.medium)
 
@@ -416,7 +438,7 @@ struct StepCard: View {
 
             // 输入映射
             if showMappings {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Design.spacingMedium) {
                     HStack {
                         Text("输入映射")
                             .font(.caption)
@@ -449,14 +471,14 @@ struct StepCard: View {
                         }
                     }
                 }
-                .padding(8)
+                .padding(Design.paddingMedium)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(6)
+                .cornerRadius(Design.cornerRadiusMedium)
             }
 
             // 输出提取预览
             if let endpoint = endpoint, !endpoint.outputExtractions.isEmpty {
-                HStack(spacing: 4) {
+                HStack(spacing: Design.spacingSmall) {
                     Image(systemName: "arrow.right.circle")
                         .font(.caption)
                         .foregroundStyle(.green)
@@ -471,11 +493,11 @@ struct StepCard: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Design.paddingLarge)
         .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Design.cornerRadius)
                 .stroke(isRunning ? Color.orange : Color.clear, lineWidth: 2)
         )
     }

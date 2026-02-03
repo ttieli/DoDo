@@ -6,7 +6,7 @@ struct CardResponseView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Design.spacingXL) {
                 if let json = json {
                     AutoCardView(value: json, title: nil)
                 } else {
@@ -15,7 +15,7 @@ struct CardResponseView: View {
                         .padding()
                 }
             }
-            .padding(16)
+            .padding(Design.paddingXL)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -27,7 +27,7 @@ struct AutoCardView: View {
     let title: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             // 标题
             if let title = title, !title.isEmpty {
                 Text(title)
@@ -70,7 +70,7 @@ struct DictCardView: View {
     let dict: [String: Any]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 分离简单字段和复杂字段
             let (simpleFields, complexFields) = separateFields(dict)
 
@@ -82,7 +82,7 @@ struct DictCardView: View {
             // 复杂字段递归显示
             ForEach(Array(complexFields.keys.sorted()), id: \.self) { key in
                 if let value = complexFields[key] {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Design.spacingMedium) {
                         Text(formatKey(key))
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -137,7 +137,7 @@ struct KeyValueCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(fields.keys.sorted()), id: \.self) { key in
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: Design.spacingLarge) {
                     Text(formatKey(key))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -150,9 +150,9 @@ struct KeyValueCard: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Design.paddingLarge)
         .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
     }
 
     private func formatKey(_ key: String) -> String {
@@ -193,7 +193,7 @@ struct ArrayCardView: View {
     private let defaultRowCount = 5
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 检查是否是对象数组（可以显示为表格）
             if let firstDict = array.first as? [String: Any],
                isTableCompatible(array) {
@@ -237,7 +237,7 @@ struct ArrayCardView: View {
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, Design.paddingMedium)
                         .padding(.vertical, 6)
                 }
             }
@@ -253,7 +253,7 @@ struct ArrayCardView: View {
                             .font(.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, Design.paddingMedium)
                             .padding(.vertical, 6)
                     }
                 }
@@ -282,15 +282,15 @@ struct ArrayCardView: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.blue)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Design.paddingMedium)
                 }
                 .buttonStyle(.plain)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Design.cornerRadius)
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
     }
@@ -301,9 +301,9 @@ struct ArrayCardView: View {
         let displayItems = isExpanded ? array : Array(array.prefix(defaultRowCount))
         let hasMore = array.count > defaultRowCount
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Design.spacingSmall) {
             ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Design.spacingMedium) {
                     Text("\(index + 1).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -337,12 +337,12 @@ struct ArrayCardView: View {
                     .foregroundStyle(.blue)
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 4)
+                .padding(.top, Design.paddingSmall)
             }
         }
-        .padding(12)
+        .padding(Design.paddingLarge)
         .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
     }
 
     private func formatColumnName(_ name: String) -> String {

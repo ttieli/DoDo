@@ -71,10 +71,24 @@ extension Notification.Name {
     static let doDoWillTerminate = Notification.Name("doDoWillTerminate")
 }
 
+// MARK: - 页面文本复制支持
+
+struct CopyablePageTextKey: FocusedValueKey {
+    typealias Value = String
+}
+
+extension FocusedValues {
+    var copyablePageText: String? {
+        get { self[CopyablePageTextKey.self] }
+        set { self[CopyablePageTextKey.self] = newValue }
+    }
+}
+
 @main
 struct DoDoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var scheduler = SchedulerService.shared
+    @FocusedValue(\.copyablePageText) var pageText
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -105,6 +119,17 @@ struct DoDoApp: App {
                 }
         }
         .modelContainer(sharedModelContainer)
+        .commands {
+            CommandGroup(after: .pasteboard) {
+                Button("复制页面全部文本") {
+                    if let text = pageText, !text.isEmpty {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    }
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+            }
+        }
         .windowStyle(.automatic)
         .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)

@@ -6,7 +6,7 @@ struct BatchCommandResultView: View {
     var onItemSelect: ((BatchItem) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 标题行
             HStack {
                 if execution.isRunning {
@@ -32,7 +32,7 @@ struct BatchCommandResultView: View {
 
             // 结果列表
             ScrollView {
-                VStack(spacing: 4) {
+                VStack(spacing: Design.spacingSmall) {
                     ForEach(execution.items) { item in
                         BatchItemRow(item: item, isSelected: item.id == execution.selectedItemId)
                             .onTapGesture {
@@ -82,13 +82,13 @@ struct BatchAPIResultView: View {
                     }
                 }
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, Design.paddingMedium)
 
             // 左右分栏
             HSplitView {
                 // 左侧：结果列表
                 ScrollView {
-                    VStack(spacing: 4) {
+                    VStack(spacing: Design.spacingSmall) {
                         ForEach(execution.items) { item in
                             BatchItemRow(item: item, isSelected: item.id == execution.selectedItemId)
                                 .onTapGesture {
@@ -157,10 +157,10 @@ struct BatchItemRow: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Design.paddingMedium)
         .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.1))
-        .cornerRadius(4)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(Design.cornerRadiusSmall)
     }
 
     private var statusIcon: some View {
@@ -199,7 +199,7 @@ struct BatchAPIDetailView: View {
     @State private var viewMode: APIResponseViewMode = .json
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 视图切换
             Picker("", selection: $viewMode) {
                 Text("JSON").tag(APIResponseViewMode.json)
@@ -248,7 +248,7 @@ struct ExportAPIResultsSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Design.spacingXL) {
             Text("导出 API 结果")
                 .font(.headline)
 

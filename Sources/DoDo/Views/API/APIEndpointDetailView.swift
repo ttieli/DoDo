@@ -20,6 +20,8 @@ struct APIEndpointDetailView: View {
     @State private var batchInputs: [String] = []
     @State private var batchVariableName: String = ""
     @State private var batchResponseViewMode: APIResponseViewMode = .json
+    @State private var authExpanded = false
+    @State private var outputExtractionExpanded = false
 
     enum ResponseViewMode: String, CaseIterable {
         case json = "JSON"
@@ -35,16 +37,48 @@ struct APIEndpointDetailView: View {
 
             // 内容区
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Design.spacingSection) {
                     // 基本信息
                     basicInfoSection
 
-                    // 认证配置
-                    authSection
+                    // 认证配置（折叠）
+                    DisclosureGroup(isExpanded: $authExpanded) {
+                        authSection
+                    } label: {
+                        HStack {
+                            Label("认证配置", systemImage: "lock.shield")
+                                .font(.headline)
+                            if !authExpanded && endpoint.authType != .none {
+                                Text(endpoint.authType.rawValue)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, Design.paddingMedium)
+                                    .padding(.vertical, Design.paddingXS)
+                                    .background(Color(nsColor: .controlBackgroundColor))
+                                    .cornerRadius(Design.cornerRadiusSmall)
+                            }
+                        }
+                    }
 
-                    // 输出提取配置
+                    // 输出提取配置（折叠，仅编辑模式）
                     if isEditing {
-                        outputExtractionSection
+                        DisclosureGroup(isExpanded: $outputExtractionExpanded) {
+                            outputExtractionSection
+                        } label: {
+                            HStack {
+                                Label("输出提取", systemImage: "text.magnifyingglass")
+                                    .font(.headline)
+                                if !endpoint.outputExtractions.isEmpty {
+                                    Text("\(endpoint.outputExtractions.count) 项")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, Design.paddingMedium)
+                                        .padding(.vertical, Design.paddingXS)
+                                        .background(Color(nsColor: .controlBackgroundColor))
+                                        .cornerRadius(Design.cornerRadiusSmall)
+                                }
+                            }
+                        }
                     }
 
                     // 执行区域
@@ -54,12 +88,16 @@ struct APIEndpointDetailView: View {
                     if batchMode == .multiple && (!batchRunner.execution.items.isEmpty || batchRunner.execution.isRunning) {
                         // 批量结果
                         batchResponseSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else if runner.response != nil || runner.error != nil {
                         // 单项结果
                         responseSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
-                .padding(20)
+                .animation(.easeInOut(duration: 0.2), value: runner.isRunning)
+                .animation(.easeInOut(duration: 0.2), value: batchRunner.execution.isRunning)
+                .padding(Design.paddingXXL)
             }
         }
         .confirmationDialog("确定删除此 API？", isPresented: $showingDeleteConfirm) {
@@ -68,6 +106,26 @@ struct APIEndpointDetailView: View {
             }
             Button("取消", role: .cancel) {}
         }
+        .focusedSceneValue(\.copyablePageText, pageTextForCopy)
+    }
+
+    /// 页面全部文本（用于 Cmd+Shift+A 复制）
+    private var pageTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(endpoint.name)] \(endpoint.method.rawValue) \(endpoint.url)")
+        if let body = endpoint.bodyTemplate, !body.isEmpty { parts.append("Body:\n\(body)") }
+        if let error = runner.error { parts.append("错误: \(error)") }
+        if let response = runner.response {
+            parts.append("状态: \(response.statusCode)")
+            if let json = response.json,
+               let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                parts.append("响应:\n\(str)")
+            } else if let str = String(data: response.data, encoding: .utf8) {
+                parts.append("响应:\n\(str)")
+            }
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Header
@@ -90,7 +148,7 @@ struct APIEndpointDetailView: View {
 
             Spacer()
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button {
                     isEditing.toggle()
                     if !isEditing {
@@ -110,20 +168,20 @@ struct APIEndpointDetailView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(16)
+        .padding(Design.paddingXL)
         .background(.bar)
     }
 
     // MARK: - Basic Info
 
     private var basicInfoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             Text("基本信息")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Design.spacingLarge) {
                 // 方法和 URL
-                HStack(spacing: 12) {
+                HStack(spacing: Design.spacingLarge) {
                     Picker("方法", selection: $endpoint.method) {
                         ForEach(HTTPMethod.allCases, id: \.self) { method in
                             Text(method.rawValue).tag(method)
@@ -137,8 +195,53 @@ struct APIEndpointDetailView: View {
                         .disabled(!isEditing)
                 }
 
+                // URL 变量和验证提示
+                if !endpoint.url.isEmpty {
+                    HStack(spacing: Design.spacingMedium) {
+                        // 检测 URL 中的 {{变量}}（仅 URL，不含 Body）
+                        let urlOnlyVars: [String] = {
+                            var vars: Set<String> = []
+                            let pattern = try? NSRegularExpression(pattern: "\\{\\{([^}]+)\\}\\}")
+                            let range = NSRange(endpoint.url.startIndex..., in: endpoint.url)
+                            pattern?.enumerateMatches(in: endpoint.url, range: range) { match, _, _ in
+                                if let r = match?.range(at: 1), let sr = Range(r, in: endpoint.url) {
+                                    vars.insert(String(endpoint.url[sr]))
+                                }
+                            }
+                            vars.remove("timestamp")
+                            return Array(vars).sorted()
+                        }()
+                        if !urlOnlyVars.isEmpty {
+                            HStack(spacing: Design.spacingSmall) {
+                                Image(systemName: "curlybraces")
+                                    .font(.caption2)
+                                ForEach(urlOnlyVars, id: \.self) { v in
+                                    Text(v)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.2))
+                                        .cornerRadius(3)
+                                }
+                            }
+                            .foregroundStyle(.orange)
+                        }
+
+                        // URL 格式验证 (skip if URL contains template variables)
+                        if urlOnlyVars.isEmpty && URL(string: endpoint.url) == nil {
+                            HStack(spacing: Design.spacingSmall) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                Text("URL 格式无效")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.red)
+                        }
+                    }
+                }
+
                 // Headers
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Design.spacingMedium) {
                     HStack {
                         Text("Headers")
                             .font(.subheadline)
@@ -179,7 +282,7 @@ struct APIEndpointDetailView: View {
 
                 // Body
                 if endpoint.method != .GET {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Design.spacingMedium) {
                         Text("Body")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -191,39 +294,36 @@ struct APIEndpointDetailView: View {
                             ))
                             .font(.system(.body, design: .monospaced))
                             .frame(minHeight: 80)
-                            .padding(8)
+                            .padding(Design.paddingMedium)
                             .background(Color(nsColor: .textBackgroundColor))
-                            .cornerRadius(8)
+                            .cornerRadius(Design.cornerRadius)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8)
+                                RoundedRectangle(cornerRadius: Design.cornerRadius)
                                     .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
                             )
                         } else {
                             Text(endpoint.bodyTemplate ?? "无")
                                 .font(.system(.caption, design: .monospaced))
                                 .textSelection(.enabled)
-                                .padding(8)
+                                .padding(Design.paddingMedium)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color(nsColor: .textBackgroundColor))
-                                .cornerRadius(8)
+                                .cornerRadius(Design.cornerRadius)
                         }
                     }
                 }
             }
-            .padding(12)
+            .padding(Design.paddingLarge)
             .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Design.cornerRadius)
         }
     }
 
     // MARK: - Auth
 
     private var authSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("认证配置")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
+            VStack(alignment: .leading, spacing: Design.spacingLarge) {
                 Picker("类型", selection: $endpoint.authType) {
                     Text("无认证").tag(APIAuthType.none)
                     Text("API Key").tag(APIAuthType.apiKey)
@@ -251,14 +351,14 @@ struct APIEndpointDetailView: View {
                     customAuthConfig
                 }
             }
-            .padding(12)
+            .padding(Design.paddingLarge)
             .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Design.cornerRadius)
         }
     }
 
     private var apiKeyAuthConfig: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             HStack {
                 Text("Key 名称")
                     .frame(width: 80, alignment: .leading)
@@ -287,7 +387,7 @@ struct APIEndpointDetailView: View {
     }
 
     private var tokenAuthConfig: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Text("本地计算 Token（基于密钥+时间戳）")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -355,7 +455,7 @@ struct APIEndpointDetailView: View {
     }
 
     private var customAuthConfig: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Text("自定义 Headers（每行一个，格式: Key: Value）")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -402,11 +502,8 @@ struct APIEndpointDetailView: View {
     // MARK: - Output Extraction
 
     private var outputExtractionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
-                Text("输出提取")
-                    .font(.headline)
-
                 Spacer()
 
                 Button {
@@ -462,15 +559,15 @@ struct APIEndpointDetailView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Design.paddingLarge)
         .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Design.cornerRadius)
     }
 
     // MARK: - Execute
 
     private var executeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("执行")
                     .font(.headline)
@@ -508,7 +605,7 @@ struct APIEndpointDetailView: View {
     }
 
     private var singleExecuteSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Text("变量（JSON 格式，如 {\"input\": \"腾讯\"}）")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -547,7 +644,7 @@ struct APIEndpointDetailView: View {
     }
 
     private var batchExecuteSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             // 选择批量变量
             HStack {
                 Text("批量变量:")
@@ -566,7 +663,7 @@ struct APIEndpointDetailView: View {
             }
 
             // 批量输入列表
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                 HStack {
                     Text("输入列表 (\(batchInputs.count) 项)")
                         .font(.subheadline)
@@ -596,10 +693,10 @@ struct APIEndpointDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 20)
+                        .padding(.vertical, Design.paddingXXL)
                 } else {
                     ScrollView {
-                        VStack(spacing: 4) {
+                        VStack(spacing: Design.spacingSmall) {
                             ForEach(Array(batchInputs.enumerated()), id: \.offset) { index, input in
                                 HStack {
                                     Text(input)
@@ -617,26 +714,26 @@ struct APIEndpointDetailView: View {
                                     }
                                     .buttonStyle(.plain)
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(4)
+                                .padding(.horizontal, Design.paddingMedium)
+                                .padding(.vertical, Design.paddingSmall)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(Design.cornerRadiusSmall)
                             }
                         }
-                        .padding(8)
+                        .padding(Design.paddingMedium)
                     }
                     .frame(minHeight: 100, maxHeight: 200)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
                 }
             }
-            .padding(12)
+            .padding(Design.paddingLarge)
             .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Design.cornerRadius)
 
             // 执行按钮
             HStack {
@@ -764,7 +861,7 @@ struct APIEndpointDetailView: View {
     // MARK: - Batch Response
 
     private var batchResponseSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("批量结果")
                     .font(.headline)
@@ -815,7 +912,7 @@ struct APIEndpointDetailView: View {
     // MARK: - Response
 
     private var responseSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             HStack {
                 Text("响应")
                     .font(.headline)
@@ -823,10 +920,10 @@ struct APIEndpointDetailView: View {
                 if let response = runner.response {
                     Text("状态: \(response.statusCode)")
                         .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, Design.paddingMedium)
+                        .padding(.vertical, Design.paddingXS)
                         .background(response.statusCode < 400 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                        .cornerRadius(4)
+                        .cornerRadius(Design.cornerRadiusSmall)
                 }
 
                 Spacer()
@@ -844,14 +941,14 @@ struct APIEndpointDetailView: View {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(12)
+                    .padding(Design.paddingLarge)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
+                    .cornerRadius(Design.cornerRadius)
             } else if let response = runner.response {
                 // 提取的变量
                 if !response.extractedVariables.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Design.spacingSmall) {
                         Text("提取的变量")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -869,9 +966,9 @@ struct APIEndpointDetailView: View {
                             }
                         }
                     }
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                 }
 
                 // 响应内容

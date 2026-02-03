@@ -5,7 +5,7 @@ import SwiftData
 struct PipelineDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Action.name) private var actions: [Action]
-    let pipeline: Pipeline
+    @Bindable var pipeline: Pipeline
     var onDelete: (() -> Void)?
 
     @StateObject private var runner = PipelineRunner()
@@ -18,6 +18,7 @@ struct PipelineDetailView: View {
     @State private var selectedFinalFormat: OutputFormatConfig?
     @State private var showingSaveAsQuickCommand = false
     @State private var quickCommandName = ""
+    @State private var isEditing = false
 
     /// 最后一步的 Action
     private var lastAction: Action? {
@@ -38,7 +39,7 @@ struct PipelineDetailView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Design.spacingSection) {
                     // 流程说明
                     pipelineStepsSection
 
@@ -54,38 +55,81 @@ struct PipelineDetailView: View {
                     // 输出结果
                     if !runner.output.isEmpty || !runner.errorOutput.isEmpty || runner.isRunning {
                         outputResultSection
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: runner.isRunning)
                 .padding()
             }
         }
+        .focusedSceneValue(\.copyablePageText, pageTextForCopy)
+    }
+
+    /// 页面全部文本（用于 Cmd+Shift+A 复制）
+    private var pageTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(pipeline.name)] \(pipeline.label)")
+        parts.append("步骤: \(pipeline.steps.joined(separator: " → "))")
+        if !inputValue.isEmpty { parts.append("输入: \(inputValue)") }
+        if !outputValue.isEmpty { parts.append("输出目录: \(outputValue)") }
+        if !runner.output.isEmpty { parts.append("标准输出:\n\(runner.output)") }
+        if !runner.errorOutput.isEmpty { parts.append("错误输出:\n\(runner.errorOutput)") }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - 标题区
 
     private var headerSection: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: Design.spacingSmall) {
+                HStack(spacing: Design.spacingMedium) {
                     Image(systemName: "arrow.triangle.branch")
                         .foregroundStyle(.orange)
-                    Text(pipeline.name)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                    if isEditing {
+                        TextField("名称", text: $pipeline.name)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.title2)
+                            .frame(maxWidth: 250)
+                    } else {
+                        Text(pipeline.name)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                    }
                 }
-                Text(pipeline.label)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if isEditing {
+                    TextField("标签", text: $pipeline.label)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.subheadline)
+                        .frame(maxWidth: 250)
+                } else {
+                    Text(pipeline.label)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
 
-            if onDelete != nil {
-                Button(action: { showingDeleteConfirm = true }) {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.red)
+            HStack(spacing: Design.spacingLarge) {
+                Button {
+                    isEditing.toggle()
+                    if !isEditing {
+                        pipeline.updatedAt = Date()
+                        saveContext(modelContext)
+                    }
+                } label: {
+                    Image(systemName: isEditing ? "checkmark" : "pencil")
                 }
-                .buttonStyle(.plain)
-                .help("删除此组合")
+                .buttonStyle(.bordered)
+                .help(isEditing ? "完成编辑" : "编辑步骤")
+
+                if onDelete != nil {
+                    Button(action: { showingDeleteConfirm = true }) {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除此组合")
+                }
             }
         }
         .padding()
@@ -103,30 +147,31 @@ struct PipelineDetailView: View {
     // MARK: - 流程说明
 
     private var pipelineStepsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             Label("执行流程", systemImage: "arrow.right.circle")
                 .font(.headline)
 
-            HStack(spacing: 4) {
-                ForEach(Array(pipeline.steps.enumerated()), id: \.offset) { index, stepName in
-                    if index > 0 {
-                        Image(systemName: "arrow.right")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-
-                    let action = actions.first(where: { $0.name == stepName })
-                    Text(action?.label ?? stepName)
-                        .font(.subheadline)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(4)
-                }
+            if isEditing {
+                pipelineEditorView
+            } else {
+                PipelineFlowView(
+                    pipeline: pipeline,
+                    actions: Array(actions),
+                    currentStep: runner.currentStep,
+                    totalSteps: runner.totalSteps,
+                    isRunning: runner.isRunning,
+                    hasError: !runner.errorOutput.isEmpty
+                )
             }
 
-            if pipeline.cleanupIntermediates {
-                HStack(spacing: 4) {
+            if isEditing {
+                Toggle("自动清理中间文件", isOn: $pipeline.cleanupIntermediates)
+                    .font(.caption)
+                    .onChange(of: pipeline.cleanupIntermediates) {
+                        saveContext(modelContext)
+                    }
+            } else if pipeline.cleanupIntermediates {
+                HStack(spacing: Design.spacingSmall) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.caption)
@@ -138,10 +183,127 @@ struct PipelineDetailView: View {
         }
     }
 
+    // MARK: - Pipeline Editor
+
+    private var pipelineEditorView: some View {
+        VStack(spacing: Design.spacingSmall) {
+            // Step list
+            ForEach(Array(pipeline.pipelineSteps.enumerated()), id: \.element.id) { index, step in
+                HStack(spacing: Design.spacingMedium) {
+                    // Step number
+                    Text("\(index + 1)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .frame(width: 20, height: 20)
+                        .background(Color.blue.opacity(0.2))
+                        .cornerRadius(10)
+
+                    // Action picker
+                    Picker("", selection: Binding(
+                        get: { step.actionName },
+                        set: { newName in
+                            if let idx = pipeline.pipelineSteps.firstIndex(where: { $0.id == step.id }) {
+                                pipeline.pipelineSteps[idx].actionName = newName
+                                saveContext(modelContext)
+                            }
+                        }
+                    )) {
+                        ForEach(actions) { action in
+                            Text("\(action.name) - \(action.label)")
+                                .tag(action.name)
+                        }
+                    }
+                    .frame(maxWidth: 250)
+
+                    // Format compatibility indicator
+                    if index > 0 {
+                        let prevAction = actions.first(where: { $0.name == pipeline.pipelineSteps[index - 1].actionName })
+                        let currAction = actions.first(where: { $0.name == step.actionName })
+                        if let prev = prevAction, let curr = currAction {
+                            if prev.compatibleOutputFormats(for: curr).isEmpty {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                    .font(.caption)
+                                    .help("格式不兼容")
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    // Move buttons
+                    Button {
+                        guard index > 0 else { return }
+                        pipeline.pipelineSteps.swapAt(index, index - 1)
+                        saveContext(modelContext)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(index == 0)
+
+                    Button {
+                        guard index < pipeline.pipelineSteps.count - 1 else { return }
+                        pipeline.pipelineSteps.swapAt(index, index + 1)
+                        saveContext(modelContext)
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(index == pipeline.pipelineSteps.count - 1)
+
+                    // Delete
+                    Button {
+                        pipeline.pipelineSteps.remove(at: index)
+                        saveContext(modelContext)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pipeline.pipelineSteps.count <= 1)
+                }
+                .padding(.horizontal, Design.paddingMedium)
+                .padding(.vertical, Design.paddingSmall)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(Design.cornerRadiusSmall)
+            }
+
+            // Add step button
+            Menu {
+                ForEach(actions) { action in
+                    Button("\(action.name) - \(action.label)") {
+                        let newStep = PipelineStep(actionName: action.name)
+                        pipeline.pipelineSteps.append(newStep)
+                        saveContext(modelContext)
+                    }
+                }
+            } label: {
+                Label("添加步骤", systemImage: "plus.circle")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, Design.paddingSmall)
+        }
+        .padding(Design.paddingMedium)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+        .cornerRadius(Design.cornerRadius)
+    }
+
     // MARK: - 输入区
 
     private var inputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             // 根据第一个 step 决定输入类型
             let firstAction = actions.first(where: { $0.name == pipeline.steps.first })
             let inputLabel = firstAction?.inputConfig.label ?? "输入"
@@ -150,16 +312,16 @@ struct PipelineDetailView: View {
             Label(inputLabel, systemImage: iconForInputType(inputType))
                 .font(.headline)
 
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: Design.spacingMedium) {
                 TextEditor(text: $inputValue)
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 60, maxHeight: 120)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
 
@@ -167,7 +329,7 @@ struct PipelineDetailView: View {
                     Button("选择...") {
                         showingFilePicker = true
                     }
-                    .padding(.top, 8)
+                    .padding(.top, Design.paddingMedium)
                 }
             }
             .fileImporter(
@@ -194,10 +356,10 @@ struct PipelineDetailView: View {
     // MARK: - 输出区
 
     private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.spacingLarge) {
             // 输出格式选择（如果最后一步有多种输出格式）
             if finalOutputFormats.count > 1 {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Design.spacingMedium) {
                     Label("输出格式", systemImage: "doc.badge.gearshape")
                         .font(.headline)
 
@@ -213,31 +375,34 @@ struct PipelineDetailView: View {
                             selectedFinalFormat = finalOutputFormats.first
                         }
                     }
+                    .onChange(of: pipeline.steps.last) { _, _ in
+                        selectedFinalFormat = finalOutputFormats.first
+                    }
                 }
             }
 
             // 输出目录
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                 Label("输出目录", systemImage: "folder.badge.plus")
                     .font(.headline)
 
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Design.spacingMedium) {
                     TextEditor(text: $outputValue)
                         .font(.system(.body, design: .monospaced))
                         .frame(minHeight: 40, maxHeight: 80)
                         .scrollContentBackground(.hidden)
-                        .padding(8)
+                        .padding(Design.paddingMedium)
                         .background(Color(nsColor: .textBackgroundColor))
-                        .cornerRadius(6)
+                        .cornerRadius(Design.cornerRadiusMedium)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: Design.cornerRadiusMedium)
                                 .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                         )
 
                     Button("选择...") {
                         showingOutputPicker = true
                     }
-                    .padding(.top, 8)
+                    .padding(.top, Design.paddingMedium)
                 }
                 .fileImporter(
                     isPresented: $showingOutputPicker,
@@ -304,7 +469,7 @@ struct PipelineDetailView: View {
     // MARK: - 输出结果
 
     private var outputResultSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.spacingMedium) {
             HStack {
                 Label("执行输出", systemImage: "text.alignleft")
                     .font(.headline)
@@ -330,7 +495,7 @@ struct PipelineDetailView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Design.spacingMedium) {
                         if !runner.output.isEmpty {
                             Text(runner.output)
                                 .font(.system(.body, design: .monospaced))
@@ -349,13 +514,13 @@ struct PipelineDetailView: View {
                             .frame(height: 1)
                             .id("bottom")
                     }
-                    .padding(12)
+                    .padding(Design.paddingLarge)
                 }
                 .frame(minHeight: 200, maxHeight: 400)
                 .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(8)
+                .cornerRadius(Design.cornerRadius)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Design.cornerRadius)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                 )
                 .onChange(of: runner.output) { _, _ in

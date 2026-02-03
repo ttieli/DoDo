@@ -40,10 +40,10 @@ struct ImportView: View {
                 Spacer()
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: Design.spacingSection) {
                         // Help 原文
                         GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                                 HStack {
                                     Text("Help 输出")
                                         .font(.headline)
@@ -69,7 +69,7 @@ struct ImportView: View {
                         // 参考信息
                         if let parsed = parsedHelp {
                             GroupBox {
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: Design.spacingMedium) {
                                     Text("分析结果")
                                         .font(.headline)
 
@@ -82,7 +82,7 @@ struct ImportView: View {
 
                         // AI Prompt
                         GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                                 HStack {
                                     Text("AI Prompt")
                                         .font(.headline)
@@ -111,20 +111,20 @@ struct ImportView: View {
                                 }
                                 .frame(maxHeight: 150)
                                 .background(Color(nsColor: .textBackgroundColor))
-                                .cornerRadius(4)
+                                .cornerRadius(Design.cornerRadiusSmall)
                             }
                         }
 
                         // 导入配置
                         GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: Design.spacingMedium) {
                                 Text("粘贴 JSON 配置")
                                     .font(.headline)
 
                                 TextEditor(text: $jsonInput)
                                     .font(.system(.caption, design: .monospaced))
                                     .frame(minHeight: 120, maxHeight: 200)
-                                    .border(Color.gray.opacity(0.3))
+                                    .border(Color(nsColor: .separatorColor))
 
                                 if let error = errorMessage {
                                     Text(error)

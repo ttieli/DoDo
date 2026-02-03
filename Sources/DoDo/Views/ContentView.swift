@@ -128,18 +128,51 @@ struct ContentView: View {
 /// 空状态视图
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "terminal")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("选择一个命令开始")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            Text("从左侧列表选择命令，或点击 + 添加新命令")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        VStack(spacing: Design.spacingSection) {
+            Image(systemName: "terminal.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary.opacity(0.6))
+
+            VStack(spacing: Design.spacingMedium) {
+                Text("欢迎使用 DoDo")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                Text("从左侧选择命令，或按以下步骤开始")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: Design.spacingLarge) {
+                quickStartRow(step: 1, icon: "plus.circle.fill", color: .blue,
+                              title: "添加命令", detail: "点击左下角 + 导入 CLI 工具")
+                quickStartRow(step: 2, icon: "slider.horizontal.3", color: .orange,
+                              title: "配置参数", detail: "自动解析 --help 生成图形界面")
+                quickStartRow(step: 3, icon: "play.fill", color: .green,
+                              title: "执行", detail: "一键运行，或保存为快捷命令")
+            }
+            .padding(Design.paddingXL)
+            .background(Color(.controlBackgroundColor).opacity(0.5))
+            .cornerRadius(Design.cornerRadiusLarge)
         }
+        .frame(maxWidth: 360)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func quickStartRow(step: Int, icon: String, color: Color, title: String, detail: String) -> some View {
+        HStack(spacing: Design.spacingLarge) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: Design.spacingTight) {
+                Text(title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

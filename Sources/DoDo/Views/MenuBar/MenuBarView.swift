@@ -30,13 +30,13 @@ struct MenuBarView: View {
                 Text("暂无定时任务")
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Design.paddingSmall)
             } else {
                 Text("定时任务 (\(scheduledTasks.count))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
-                    .padding(.top, 4)
+                    .padding(.top, Design.paddingSmall)
 
                 ForEach(scheduledTasks.prefix(5)) { task in
                     TaskMenuItem(task: task)
@@ -88,7 +88,7 @@ struct TaskMenuItem: View {
                     Text(task.name)
                         .lineLimit(1)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: Design.spacingSmall) {
                         if task.runOnLaunch {
                             Image(systemName: "power")
                                 .font(.caption2)

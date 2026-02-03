@@ -14,13 +14,13 @@ struct SaveAsQuickCommandSheet: View {
     @State private var repeatInterval: Int = 0
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Design.spacingSection) {
             Text("保存为定时任务")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Design.spacingXL) {
                 // 名称
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("名称")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -29,23 +29,23 @@ struct SaveAsQuickCommandSheet: View {
                 }
 
                 // 命令预览
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("命令")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(command)
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(3)
-                        .padding(8)
+                        .padding(Design.paddingMedium)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(nsColor: .textBackgroundColor))
-                        .cornerRadius(6)
+                        .cornerRadius(Design.cornerRadiusMedium)
                 }
 
                 Divider()
 
                 // 调度设置
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Design.spacingLarge) {
                     Text("自动执行")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -77,7 +77,7 @@ struct SaveAsQuickCommandSheet: View {
             }
             .frame(width: 350)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -91,7 +91,7 @@ struct SaveAsQuickCommandSheet: View {
                 .disabled(name.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 
     private func saveQuickCommand() {
@@ -122,13 +122,13 @@ struct SaveAsPipelineQuickCommandSheet: View {
     @State private var repeatInterval: Int = 0
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Design.spacingSection) {
             Text("保存为定时任务")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Design.spacingXL) {
                 // 名称
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("名称")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -137,7 +137,7 @@ struct SaveAsPipelineQuickCommandSheet: View {
                 }
 
                 // Pipeline 信息
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("组合命令")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -148,18 +148,18 @@ struct SaveAsPipelineQuickCommandSheet: View {
                         Text("(\(pipeline.steps.joined(separator: " → ")))")
                             .foregroundStyle(.secondary)
                     }
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                 }
 
                 // 预设参数
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Design.spacingSmall) {
                     Text("预设参数")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Design.spacingTight) {
                         Text("输入: \(presetInput)")
                             .font(.caption)
                         if let output = presetOutput {
@@ -167,16 +167,16 @@ struct SaveAsPipelineQuickCommandSheet: View {
                                 .font(.caption)
                         }
                     }
-                    .padding(8)
+                    .padding(Design.paddingMedium)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
+                    .cornerRadius(Design.cornerRadiusMedium)
                 }
 
                 Divider()
 
                 // 调度设置
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Design.spacingLarge) {
                     Text("自动执行")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -208,7 +208,7 @@ struct SaveAsPipelineQuickCommandSheet: View {
             }
             .frame(width: 380)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Design.spacingLarge) {
                 Button("取消") {
                     dismiss()
                 }
@@ -222,7 +222,7 @@ struct SaveAsPipelineQuickCommandSheet: View {
                 .disabled(name.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Design.paddingSection)
     }
 
     private func saveQuickCommand() {
