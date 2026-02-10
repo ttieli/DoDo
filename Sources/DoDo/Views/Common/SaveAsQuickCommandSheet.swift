@@ -103,6 +103,9 @@ struct SaveAsQuickCommandSheet: View {
         )
         modelContext.insert(quickCommand)
         saveContext(modelContext)
+        // 自动备份到 iCloud JSON
+        let config = QuickCommandConfig.from(quickCommand)
+        try? ConfigManager.shared.saveQuickCommandConfig(config, name: config.name)
         dismiss()
     }
 }
@@ -237,6 +240,7 @@ struct SaveAsPipelineQuickCommandSheet: View {
         )
         modelContext.insert(quickCommand)
         saveContext(modelContext)
+        // Pipeline 类型的 QuickCommand 暂不备份到 JSON（依赖 pipelineId）
         dismiss()
     }
 }

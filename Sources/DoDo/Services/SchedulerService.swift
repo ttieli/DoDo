@@ -81,37 +81,51 @@ class SchedulerService: ObservableObject {
 
     /// 执行单个任务
     func runTask(_ task: QuickCommand) async {
-        guard !runningTasks.contains(task.id) else {
-            print("📅 任务 \(task.name) 正在执行中，跳过")
+        let taskId = task.id
+        let taskName = task.name
+        let taskType = task.type
+        let taskCommand = task.command
+
+        guard !runningTasks.contains(taskId) else {
+            print("📅 任务 \(taskName) 正在执行中，跳过")
             return
         }
 
-        runningTasks.insert(task.id)
-        print("📅 执行任务: \(task.name) (类型: \(task.taskType))")
+        runningTasks.insert(taskId)
+        print("📅 执行任务: \(taskName) (类型: \(taskType))")
 
         do {
-            switch task.type {
+            switch taskType {
             case .command:
                 // 直接执行命令
                 let runner = CommandRunner()
-                let result = try await runner.run(task.command)
-                task.lastRunAt = Date()
-                try? modelContext?.save()
+                let result = try await runner.run(taskCommand)
+
+                // await 后重新获取模型对象，避免跨悬挂点访问已失效的对象
+                if let context = modelContext {
+                    let descriptor = FetchDescriptor<QuickCommand>(
+                        predicate: #Predicate { $0.id == taskId }
+                    )
+                    if let freshTask = try? context.fetch(descriptor).first {
+                        freshTask.lastRunAt = Date()
+                        try? context.save()
+                    }
+                }
 
                 let success = result.exitCode == 0
-                lastResults[task.id] = (success, result.stdout)
-                print("📅 任务 \(task.name) 完成，退出码: \(result.exitCode)")
+                lastResults[taskId] = (success, result.stdout)
+                print("📅 任务 \(taskName) 完成，退出码: \(result.exitCode)")
 
             case .pipeline:
                 // 执行 Pipeline
                 try await runPipelineTask(task)
             }
         } catch {
-            lastResults[task.id] = (false, error.localizedDescription)
-            print("📅 任务 \(task.name) 失败: \(error)")
+            lastResults[taskId] = (false, error.localizedDescription)
+            print("📅 任务 \(taskName) 失败: \(error)")
         }
 
-        runningTasks.remove(task.id)
+        runningTasks.remove(taskId)
     }
 
     /// 执行 Pipeline 类型的任务
@@ -121,6 +135,11 @@ class SchedulerService: ObservableObject {
               let input = task.presetInput else {
             throw SchedulerError.invalidPipelineConfig
         }
+
+        let taskId = task.id
+        let taskName = task.name
+        let presetOutput = task.presetOutput
+        let presetFormatOptions = task.presetFormatOptions
 
         // 获取 Pipeline
         let pipelineDescriptor = FetchDescriptor<Pipeline>(
@@ -136,7 +155,7 @@ class SchedulerService: ObservableObject {
 
         // 构建输出格式配置
         var finalFormat: OutputFormatConfig?
-        if let options = task.presetFormatOptions, !options.isEmpty {
+        if let options = presetFormatOptions, !options.isEmpty {
             // 尝试从最后一个 action 找到匹配的格式
             if let lastStepName = pipeline.steps.last,
                let lastAction = actions.first(where: { $0.name == lastStepName }) {
@@ -152,16 +171,22 @@ class SchedulerService: ObservableObject {
             pipeline: pipeline,
             actions: actions,
             input: input,
-            finalOutput: task.presetOutput,
+            finalOutput: presetOutput,
             finalOutputFormat: finalFormat
         )
 
-        task.lastRunAt = Date()
-        try? context.save()
+        // await 后重新获取模型对象
+        let taskDescriptor = FetchDescriptor<QuickCommand>(
+            predicate: #Predicate { $0.id == taskId }
+        )
+        if let freshTask = try? context.fetch(taskDescriptor).first {
+            freshTask.lastRunAt = Date()
+            try? context.save()
+        }
 
         let success = result.exitCode == 0
-        lastResults[task.id] = (success, result.stdout)
-        print("📅 Pipeline 任务 \(task.name) 完成，退出码: \(result.exitCode)")
+        lastResults[taskId] = (success, result.stdout)
+        print("📅 Pipeline 任务 \(taskName) 完成，退出码: \(result.exitCode)")
     }
 }
 

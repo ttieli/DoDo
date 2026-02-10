@@ -1,8 +1,16 @@
 import SwiftUI
 import SwiftData
 import os
+import SQLite3
 
 private let logger = Logger(subsystem: "com.dodo.app", category: "persistence")
+
+/// SwiftData 存储路径
+let storeURL: URL = {
+    let dir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support")
+    return dir.appendingPathComponent("default.store")
+}()
 
 /// 诊断日志文件路径
 private let diagLogURL: URL = {
@@ -28,16 +36,60 @@ func diagLog(_ message: String) {
     }
 }
 
-/// 统一的 SwiftData 保存方法，带错误日志
+/// 强制执行 SQLite WAL checkpoint，确保数据写入主文件
+func forceWALCheckpoint() {
+    let path = storeURL.path
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+        diagLog("⚠️ WAL checkpoint: 无法打开数据库")
+        return
+    }
+    defer { sqlite3_close(db) }
+
+    var pnLog: Int32 = 0
+    var pnCkpt: Int32 = 0
+    let rc = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, &pnLog, &pnCkpt)
+    if rc == SQLITE_OK {
+        diagLog("🔒 WAL checkpoint 完成 (log=\(pnLog), ckpt=\(pnCkpt))")
+    } else {
+        diagLog("⚠️ WAL checkpoint 失败: rc=\(rc)")
+    }
+}
+
+/// 统一的 SwiftData 保存方法，带重试、WAL checkpoint 和错误日志
 func saveContext(_ context: ModelContext, caller: String = #function) {
     guard context.hasChanges else { return }
-    do {
-        try context.save()
-        diagLog("✅ 保存成功 (\(caller))")
-    } catch {
-        let msg = "❌ 保存失败 (\(caller)): \(error)"
-        diagLog(msg)
-        logger.error("\(msg)")
+
+    var lastError: Error?
+    for attempt in 1...3 {
+        do {
+            try context.save()
+            diagLog("✅ 保存成功 (\(caller))")
+            // 保存成功后强制 WAL checkpoint
+            forceWALCheckpoint()
+            return
+        } catch {
+            lastError = error
+            diagLog("⚠️ 保存失败 第\(attempt)次 (\(caller)): \(error)")
+            if attempt < 3 {
+                Thread.sleep(forTimeInterval: 0.1 * Double(attempt))
+            }
+        }
+    }
+
+    // 所有重试都失败
+    let msg = "❌ 保存最终失败 (\(caller)): \(lastError?.localizedDescription ?? "unknown")"
+    diagLog(msg)
+    logger.error("\(msg)")
+
+    // 弹出告警通知用户
+    DispatchQueue.main.async {
+        let alert = NSAlert()
+        alert.messageText = "数据保存失败"
+        alert.informativeText = "部分更改可能未保存。建议通过菜单导出重要配置到 JSON 文件。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "知道了")
+        alert.runModal()
     }
 }
 
@@ -112,7 +164,7 @@ struct DoDoApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .onAppear {
                     setupScheduler()
@@ -152,7 +204,7 @@ struct DoDoApp: App {
             await scheduler.runLaunchTasks()
         }
 
-        // 监听退出通知，执行最终保存
+        // 监听退出通知，执行最终保存 + checkpoint
         NotificationCenter.default.addObserver(
             forName: .doDoWillTerminate,
             object: nil,
@@ -162,6 +214,28 @@ struct DoDoApp: App {
             if ctx.hasChanges {
                 NSLog("📦 [SwiftData] 退出前保存未保存的更改...")
                 saveContext(ctx, caller: "applicationWillTerminate")
+            } else {
+                // 即使没有未保存更改，也执行 checkpoint 确保 WAL 数据刷入
+                forceWALCheckpoint()
+            }
+        }
+
+        // 定时自动 checkpoint（每 5 分钟）
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            forceWALCheckpoint()
+        }
+
+        // 应用失活时保存 + checkpoint
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            let ctx = self.sharedModelContainer.mainContext
+            if ctx.hasChanges {
+                saveContext(ctx, caller: "didResignActive")
+            } else {
+                forceWALCheckpoint()
             }
         }
     }

@@ -109,6 +109,24 @@ class ConfigManager {
         return dict["type"] as? String
     }
 
+    /// 保存 Pipeline 配置到文件
+    func savePipelineConfig(_ config: PipelineConfig, name: String) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(config)
+        let fileURL = configDirectory.appendingPathComponent("\(name).json")
+        try data.write(to: fileURL)
+    }
+
+    /// 保存 QuickCommand 配置到文件
+    func saveQuickCommandConfig(_ config: QuickCommandConfig, name: String) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(config)
+        let fileURL = configDirectory.appendingPathComponent("\(name).json")
+        try data.write(to: fileURL)
+    }
+
     /// 删除配置文件
     func deleteConfig(name: String) throws {
         let fileURL = configDirectory.appendingPathComponent("\(name).json")

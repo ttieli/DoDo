@@ -14,10 +14,8 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 打开主窗口
             Button {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                if let window = NSApplication.shared.windows.first {
-                    window.makeKeyAndOrderFront(nil)
-                }
+                openWindow(id: "main")
+                NSApplication.shared.activate()
             } label: {
                 Label("打开 DoDo", systemImage: "macwindow")
             }
@@ -63,15 +61,58 @@ struct MenuBarView: View {
     }
 }
 
-/// 任务菜单项
+/// 任务菜单项（带子菜单显示运行结果）
 struct TaskMenuItem: View {
     let task: QuickCommand
-    @StateObject private var runner = CommandRunner()
+
+    private var lastResult: (success: Bool, output: String)? {
+        SchedulerService.shared.lastResults[task.id]
+    }
+
+    private var isRunning: Bool {
+        SchedulerService.shared.runningTasks.contains(task.id)
+    }
 
     var body: some View {
-        Button {
-            Task {
-                await SchedulerService.shared.runTask(task)
+        Menu {
+            // 立即执行
+            Button {
+                Task {
+                    await SchedulerService.shared.runTask(task)
+                }
+            } label: {
+                Label(isRunning ? "执行中..." : "立即执行", systemImage: "play.fill")
+            }
+            .disabled(isRunning)
+
+            Divider()
+
+            // 上次运行结果
+            if let result = lastResult {
+                let statusIcon = result.success ? "checkmark.circle.fill" : "xmark.circle.fill"
+                let statusText = result.success ? "上次成功" : "上次失败"
+                let timeText = task.lastRunAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
+
+                Label("\(statusText) \(timeText)", systemImage: statusIcon)
+
+                // 输出预览 — 点击复制到剪贴板
+                if !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let preview = String(result.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(result.output, forType: .string)
+                    } label: {
+                        Label("复制输出", systemImage: "doc.on.doc")
+                    }
+
+                    // 输出预览（纯展示）
+                    Text(preview)
+                        .font(.caption)
+                        .lineLimit(3)
+                }
+            } else {
+                Label("尚未运行", systemImage: "clock")
+                    .foregroundStyle(.secondary)
             }
         } label: {
             HStack {
@@ -107,10 +148,14 @@ struct TaskMenuItem: View {
 
                 Spacer()
 
-                // 运行状态
-                if SchedulerService.shared.runningTasks.contains(task.id) {
+                // 运行状态指示
+                if isRunning {
                     ProgressView()
                         .scaleEffect(0.5)
+                } else if let result = lastResult {
+                    Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(result.success ? .green : .red)
+                        .font(.caption)
                 }
             }
         }

@@ -323,6 +323,9 @@ struct SidebarView: View {
             PipelineInputSheet(actions: Array(actions)) { pipeline in
                 modelContext.insert(pipeline)
                 saveContext(modelContext)
+                // 自动备份到 iCloud JSON
+                let config = PipelineConfig.from(pipeline)
+                try? ConfigManager.shared.savePipelineConfig(config, name: config.name)
                 selection = .pipeline(pipeline)
             }
         }
@@ -330,6 +333,9 @@ struct SidebarView: View {
             QuickCommandInputSheet { quickCommand in
                 modelContext.insert(quickCommand)
                 saveContext(modelContext)
+                // 自动备份到 iCloud JSON
+                let config = QuickCommandConfig.from(quickCommand)
+                try? ConfigManager.shared.saveQuickCommandConfig(config, name: config.name)
                 selection = .quickCommand(quickCommand)
             }
         }
