@@ -97,7 +97,6 @@ struct TaskMenuItem: View {
 
                 // 输出预览 — 点击复制到剪贴板
                 if !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let preview = String(result.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(result.output, forType: .string)
@@ -105,10 +104,11 @@ struct TaskMenuItem: View {
                         Label("复制输出", systemImage: "doc.on.doc")
                     }
 
-                    // 输出预览（纯展示）
-                    Text(preview)
+                    Divider()
+
+                    // 输出全文
+                    Text(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
                         .font(.caption)
-                        .lineLimit(3)
                 }
             } else {
                 Label("尚未运行", systemImage: "clock")
